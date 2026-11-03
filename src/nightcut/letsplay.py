@@ -198,7 +198,7 @@ class LetsPlayRun(Run):
             f"- Removed: {sum(by_label.values()) / 60:.1f} min "
             f"({', '.join(f'{k} {v / 60:.1f} min' for k, v in sorted(by_label.items())) or 'nothing'})",
             f"- Episodes: {len(eps)}",
-            f"- Total processing time: {sum(s['seconds'] for s in stages.values()) / 60:.1f} min",
+            f"- Total processing time: {costs.total_seconds(stages) / 60:.1f} min",
             f"- Highest VRAM use: {max((s['vram_peak_mib'] for s in stages.values()), default=0) / 1024:.1f} GB",
             "",
             "## Episodes",

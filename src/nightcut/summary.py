@@ -29,7 +29,7 @@ def base(stages: dict, pricing: dict, name: str, hours: float, warning: str | No
     return {
         "name": name,
         "recording_hours": round(hours, 2),
-        "processing_min": round(sum(s["seconds"] for s in stages.values()) / 60, 1),
+        "processing_min": round(costs.total_seconds(stages) / 60, 1),
         "vram_gb": round(max((s["vram_peak_mib"] for s in stages.values()), default=0) / 1024, 1),
         "cost_eur": {"budget": round(result["tiers"]["budget"]["total_eur"], 2),
                      "premium": round(result["tiers"]["premium"]["total_eur"], 2),

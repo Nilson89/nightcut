@@ -26,8 +26,8 @@ def load_asr(cfg: dict):
     import torch
     from transformers import pipeline
 
-    device = 0 if torch.cuda.is_available() else -1
-    dtype = torch.float16 if device == 0 else torch.float32
+    device = int(cfg.get("device") or 0) if torch.cuda.is_available() else -1  # GPU index (second card in 2-GPU mode)
+    dtype = torch.float16 if device >= 0 else torch.float32
     return pipeline("automatic-speech-recognition", model=cfg["model"], torch_dtype=dtype, device=device)
 
 

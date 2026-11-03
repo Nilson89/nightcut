@@ -131,6 +131,11 @@ def grab_frames(src: Path, times: list[float], region: dict, src_w: int, src_h: 
     return frames
 
 
+def encoder_gpu(codec: str, gpu: int | None) -> list[str]:
+    """ffmpeg option that puts an NVENC encoder on a given GPU (index in PCI order, like nvidia-smi)."""
+    return ["-gpu", str(gpu)] if gpu is not None and "nvenc" in codec else []
+
+
 def region_pixels(region: dict, src_w: int, src_h: int) -> tuple[int, int, int, int]:
     """Fractional region -> even pixel values (x, y, w, h)."""
     def even(v: float) -> int:

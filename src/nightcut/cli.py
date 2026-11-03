@@ -29,6 +29,9 @@ def run(
     fill: Optional[bool] = typer.Option(None, "--fill/--no-fill",
                                         help="Highlights: fill a calm session up to the target length with quiet "
                                              "moments, or rather make a shorter video. Asked at start if not given."),
+    gpus: Optional[str] = typer.Option(None, "--gpus",
+                                       help="Highlights: how many NVIDIA GPUs to use, e.g. 1 or 2 "
+                                            "(default: gpus.use in the config, 'auto' = all cards)."),
 ):
     """Analyse recordings and write editor-ready timelines."""
     from .letsplay import LetsPlayRun
@@ -60,7 +63,7 @@ def run(
             typer.echo("Not asked (no terminal): filling up to the target length. Use --fill/--no-fill.")
     for recording in recordings:  # highlights: one video per recording
         folder = None if not name else name if len(recordings) == 1 else f"{name}_{recording.stem}"
-        xml = Run(recording, cfg, set(force), folder).run()
+        xml = Run(recording, cfg, set(force), folder, use_gpus=gpus).run()
         typer.echo(f"\nTimeline: {xml}\nReport:   {xml.parent / 'report.md'}")
 
 
@@ -79,6 +82,32 @@ def summary(
             typer.echo(f"⚠️ {folder.name}: no summary.json (run not finished?)")
             continue
         typer.echo(text(json.loads(path.read_text(encoding="utf-8"))) + "\n")
+
+
+@app.command()
+def layout(
+    recording: Path = typer.Argument(..., exists=True, dir_okay=False, help="A recording (mkv/mp4)."),
+    save: Optional[Path] = typer.Option(None, "--save", "-s",
+                                        help="Write the result into this config, e.g. config/local.yaml "
+                                             "(only its layout section is replaced)."),
+    frames: int = typer.Option(8, help="How many frames to check."),
+):
+    """Find where gameplay and facecam sit in a recording and print the layout for your config."""
+    from .layout import detect, draw_preview, save_layout, to_yaml
+
+    cfg = load_config(save if save and save.exists() else None)
+    result = detect(recording, cfg, frames, log=typer.echo)
+    preview = draw_preview(recording, result, Path.cwd() / f"layout_{recording.stem}.png")
+    block = to_yaml(result, recording.name)
+    note = {"canvas": "Gameplay and facecam are separate areas: nightcut cuts them into separate files.",
+            "burned_in": "Facecam is part of the gameplay picture (burned in).",
+            "no_cam": "No facecam found: gameplay is the whole picture."}[result["kind"]]
+    typer.echo(f"\n{note}\n\n{block}\nCheck the preview: {preview}")
+    if save:
+        save_layout(save, block)
+        typer.echo(f"Saved to {save}. Use it with: nightcut run ... --config {save}")
+    else:
+        typer.echo("Copy the block into your config (e.g. config/local.yaml) or run again with --save config/local.yaml")
 
 
 @app.command()

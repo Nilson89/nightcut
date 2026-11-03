@@ -114,6 +114,15 @@ ollama:
   keep_alive: 0           # unload after each call; keeps a 16 GB card free for the next step
   timeout_s: 600
 
+# Several NVIDIA GPUs (highlights mode): both cards read the kill feed and check the candidates
+# (each card gets its own Ollama server, started and stopped by nightcut); the second card also
+# does the transcript and the Shorts. One GPU in the PC: nothing changes.
+gpus:
+  use: auto               # auto = all cards with enough VRAM; 1 = only the main card (e.g. to compare)
+  devices: null           # nvidia-smi indices, main card first, e.g. [1, 0]; null = PCI order (first slot = main)
+  min_vram_gb: 10         # smaller cards are left out (the vision model needs about 8 GB)
+  first_port: 11435       # nightcut's Ollama servers use ports from here on
+
 # Consolidated, edit-friendly media for the timeline.
 render:
   handles_s: 3            # extra seconds before/after each clip for trimming

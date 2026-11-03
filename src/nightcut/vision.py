@@ -41,18 +41,23 @@ def frame_times(start: float, end: float, peak: float, count: int) -> list[float
     return times[:count]
 
 
-def analyse(info: MediaInfo, candidates: list[dict], cfg: dict, progress=None) -> list[dict]:
-    vcfg, ocfg = cfg["vision"], cfg["ollama"]
+def analyse(info: MediaInfo, candidates: list[dict], cfg: dict, progress=None,
+            endpoints: list[dict] | None = None, per_worker: list[int] | None = None) -> list[dict]:
+    """endpoints: one Ollama config per GPU; all GPUs take candidates from one queue."""
+    from .gpus import parallel_map
+
+    vcfg = cfg["vision"]
+    endpoints = endpoints or [cfg["ollama"]]
     hints = cfg["profile"].get("vision_hints", "")
     system = SYSTEM.replace("{events}", json.dumps(offered_events(cfg)))
-    for n, cand in enumerate(candidates, 1):
-        if cand.get("vision"):  # already known, e.g. read from the kill feed
-            continue
+    todo = [c for c in candidates if not c.get("vision")]  # some are already known, e.g. from the kill feed
+
+    def look(cand: dict, n: int) -> None:
         times = frame_times(cand["start"], cand["end"], cand["peak"], vcfg["frames_per_candidate"])
         frames = grab_frames(Path(info.path), times, cfg["layout"]["gameplay"], info.width, info.height, vcfg["frame_width"])
         user = f"{hints}\nFrames at seconds {times}. The player said: \"{cand['transcript'][:400]}\""
         try:
-            result = llm.chat_json(ocfg, vcfg["model"], system, user, images=frames, keep_loaded=True)
+            result = llm.chat_json(endpoints[n], vcfg["model"], system, user, images=frames, keep_loaded=True)
         except llm.OllamaError:
             raise
         except Exception as exc:  # one bad answer should not stop the night
@@ -62,9 +67,12 @@ def analyse(info: MediaInfo, candidates: list[dict], cfg: dict, progress=None) -
             "intensity": int(result.get("intensity", 5) or 0),
             "summary": str(result.get("summary", "")),
         }
-        if progress:
-            progress(n, len(candidates))
-    llm.unload(ocfg, vcfg["model"])
+
+    try:
+        parallel_map(todo, list(range(len(endpoints))), look, progress=progress, per_worker=per_worker)
+    finally:
+        for ocfg in endpoints:
+            llm.unload(ocfg, vcfg["model"])
     return candidates
 
 

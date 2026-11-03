@@ -6,7 +6,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .media import AudioStream, MediaInfo, crop_filter, run
+from .media import AudioStream, MediaInfo, crop_filter, encoder_gpu, run
 
 W, H = 1080, 1920
 
@@ -80,7 +80,7 @@ def _filter_path(p: Path) -> str:
 
 
 def render(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream], ass: Path, cfg: dict,
-           out_dir: Path) -> Path:
+           out_dir: Path, gpu: int | None = None) -> Path:
     scfg = cfg["shorts"]
     out = out_dir / f"short_{n:02d}.mp4"
     start = clip["start"]
@@ -106,7 +106,7 @@ def render(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream],
 
     run(["ffmpeg", "-hide_banner", "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
          "-i", str(info.path), "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
-         "-c:v", cfg["render"]["codec"], "-preset", "p5", "-rc", "vbr", "-cq", "20", "-b:v", "0",
+         "-c:v", cfg["render"]["codec"], *encoder_gpu(cfg["render"]["codec"], gpu), "-preset", "p5", "-rc", "vbr", "-cq", "20", "-b:v", "0",
          "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
     return out
 

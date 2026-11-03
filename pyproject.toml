@@ -1,6 +1,6 @@
 [project]
 name = "nightcut"
-version = "0.1.0"
+version = "0.2.0"
 description = "Overnight local-AI pipeline that turns raw gameplay recordings into editor-ready timelines, Shorts and metadata."
 readme = "README.md"
 license = "MIT"

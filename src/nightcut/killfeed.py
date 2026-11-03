@@ -13,6 +13,7 @@ from __future__ import annotations
 import difflib
 import json
 import re
+import threading
 from pathlib import Path
 
 from . import llm
@@ -81,41 +82,58 @@ def parse_answer(answer: dict, times: list[float]) -> list[dict]:
     return readings
 
 
-def read_tiles(tiles: list[dict], cfg: dict, progress=None, cache: Path | None = None) -> list[dict]:
+def read_tiles(tiles: list[dict], cfg: dict, progress=None, cache: Path | None = None,
+               endpoints: list[dict] | None = None, ready: list | None = None,
+               per_worker: list[int] | None = None) -> list[dict]:
     """Ask the vision model for all kill lines; the player's are picked out in code.
 
     Asking the model for "only the player's kills" made it report other people's kills
     too. Copying every line and matching the name afterwards is more reliable.
     Every answer is appended to `cache` right away, so a restart continues where it stopped.
+    endpoints: one Ollama config per GPU; all GPUs read tiles from one queue (ready: see gpus.parallel_map).
     """
-    kcfg, ocfg = cfg["killfeed"], cfg["ollama"]
+    from .gpus import parallel_map
+
+    kcfg = cfg["killfeed"]
+    endpoints = endpoints or [cfg["ollama"]]
     model = kcfg.get("model") or cfg["vision"]["model"]
     done: dict[str, list[dict]] = {}
     if cache and cache.exists():
         for line in cache.read_text(encoding="utf-8").splitlines():
             entry = json.loads(line)
             done[entry["file"]] = entry["readings"]
-    used_model = False
-    for n, tile in enumerate(tiles, 1):
-        if tile["file"] not in done:
-            count = len(tile["times"])
-            try:
-                answer = llm.chat_json(ocfg, model, SYSTEM.format(n=count), f"{count} panels.",
-                                       images=[Path(tile["file"]).read_bytes()], temperature=0.0,
-                                       keep_loaded=True, max_tokens=800)
-            except llm.OllamaError:
-                raise
-            except Exception:  # one unreadable tile must not stop the night
-                answer = {}
-            used_model = True
-            done[tile["file"]] = parse_answer(answer, tile["times"])
+    todo = [t for t in tiles if t["file"] not in done]
+    lock = threading.Lock()
+    used: set[int] = set()
+
+    def read(tile: dict, n: int) -> None:
+        ocfg = endpoints[n]
+        count = len(tile["times"])
+        with lock:
+            used.add(n)
+        try:
+            answer = llm.chat_json(ocfg, model, SYSTEM.format(n=count), f"{count} panels.",
+                                   images=[Path(tile["file"]).read_bytes()], temperature=0.0,
+                                   keep_loaded=True, max_tokens=800)
+        except llm.OllamaError:
+            raise
+        except Exception:  # one unreadable tile must not stop the night
+            answer = {}
+        readings = parse_answer(answer, tile["times"])
+        with lock:
+            done[tile["file"]] = readings
             if cache:
                 with open(cache, "a", encoding="utf-8") as f:
-                    f.write(json.dumps({"file": tile["file"], "readings": done[tile["file"]]}, ensure_ascii=False) + "\n")
-        if progress:
-            progress(n, len(tiles))
-    if used_model:
-        llm.unload(ocfg, model)
+                    f.write(json.dumps({"file": tile["file"], "readings": readings}, ensure_ascii=False) + "\n")
+
+    skipped = len(tiles) - len(todo)
+    try:
+        parallel_map(todo, list(range(len(endpoints))), read, ready,
+                     progress=(lambda d, n: progress(skipped + d, len(tiles))) if progress else None,
+                     per_worker=per_worker)
+    finally:
+        for n in used:
+            llm.unload(endpoints[n], model)
     return sorted((r for t in tiles for r in done.get(t["file"], [])), key=lambda r: r["time"])
 
 

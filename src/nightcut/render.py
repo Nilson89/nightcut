@@ -10,10 +10,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .media import AudioStream, MediaInfo, crop_filter, run
+from .media import AudioStream, MediaInfo, crop_filter, encoder_gpu, run
 
 
-def render_clip(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream], cfg: dict, out_dir: Path) -> dict:
+def render_clip(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream], cfg: dict, out_dir: Path,
+                gpu: int | None = None) -> dict:
     rcfg = cfg["render"]
     handle = rcfg["handles_s"]
     src_in = max(clip["start"] - handle, 0.0)
@@ -25,8 +26,8 @@ def render_clip(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStr
     facecam = out_dir / f"{stem}_facecam.mp4" if separate_cam else None
 
     if not gameplay.exists() or (facecam and not facecam.exists()):
-        video_opts = ["-c:v", rcfg["codec"], "-preset", "p5", "-rc", "vbr", "-cq", str(rcfg["cq"]), "-b:v", "0",
-                      "-pix_fmt", "yuv420p", "-g", "60"]
+        video_opts = ["-c:v", rcfg["codec"], *encoder_gpu(rcfg["codec"], gpu), "-preset", "p5", "-rc", "vbr",
+                      "-cq", str(rcfg["cq"]), "-b:v", "0", "-pix_fmt", "yuv420p", "-g", "60"]
         graph = f"[0:v]{crop_filter(cfg['layout']['gameplay'], info.width, info.height)}[g]"
         if facecam:
             graph += f";[0:v]{crop_filter(cfg['layout']['facecam'], info.width, info.height)}[f]"

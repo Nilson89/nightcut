@@ -70,7 +70,53 @@ Am besten funktioniert nightcut mit **getrennten Audiospuren**. In OBS unter
 **Facecam im Bild?** Wenn du Gameplay und Kamera auf einer gemeinsamen Leinwand
 aufnimmst (z.B. Gameplay oben, Kamera unten), trägst du die beiden Bereiche unter
 `layout` in deiner Config ein. nightcut schneidet sie als getrennte Dateien aus, und du
-kannst die Kamera im Schnittprogramm frei platzieren.
+kannst die Kamera im Schnittprogramm frei platzieren. Wo genau die Bereiche liegen,
+ermittelt `nightcut layout` für dich (nächster Abschnitt).
+
+## Wo sitzt deine Facecam? `nightcut layout`
+
+nightcut muss wissen, wo in deiner Aufnahme das Gameplay und wo deine Kamera liegt. Das musst du
+nicht ausmessen. Öffne die Eingabeaufforderung im nightcut-Ordner und gib eine deiner Aufnahmen an:
+
+```bash
+uv run nightcut layout "D:/Aufnahmen/session.mkv" --save config/local.yaml
+```
+
+Das passiert:
+1. nightcut schaut sich 8 Bilder aus der Aufnahme an (verteilt über die ganze Länge).
+2. **Gameplay und Kamera nebeneinander oder untereinander** (eine große Leinwand): Die Bereiche
+   werden ohne KI erkannt. Was in allen Bildern schwarz bleibt, ist leere Fläche.
+3. **Kamera fest im Spielbild** (auch freigestellt ohne Hintergrund): Das Bildmodell sucht dich auf
+   jedem der 8 Bilder, nightcut nimmt daraus einen Bereich, in dem du dich bewegen kannst.
+4. Du bekommst den fertigen `layout`-Block angezeigt und ein Vorschaubild `layout_<aufnahme>.png`
+   im nightcut-Ordner. Grün ist das Gameplay, orange die Kamera. **Schau es dir kurz an.**
+5. Mit `--save config/local.yaml` landet der Block direkt in deiner Config. Gibt es die Datei noch
+   nicht, wird sie angelegt. Steht schon ein `layout` drin, wird nur dieser Teil ersetzt; alles andere
+   (Spielername, Videolänge …) bleibt, wie es ist.
+
+Danach startest du jeden Lauf mit deiner Config, und nightcut nimmt das neue Layout:
+
+```bash
+uv run nightcut run "D:/Aufnahmen/session.mkv" --profile bf6 --config config/local.yaml
+```
+
+So sieht das Ergebnis in `config/local.yaml` aus (Zahlen sind Anteile des Bildes von 0 bis 1:
+x/y = linke obere Ecke, w/h = Breite und Höhe):
+
+```yaml
+# found by nightcut layout: session.mkv (2026-11-03)
+layout:
+  gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
+  facecam:  { x: 0.79, y: 0.76, w: 0.21, h: 0.24 }
+  facecam_burned_in: true
+```
+
+- **Ohne `--save`** zeigt nightcut den Block nur an. Dann kopierst du ihn selbst in `config/local.yaml`
+  (einen vorhandenen `layout`-Block vorher löschen).
+- **Rahmen sitzt nicht richtig?** Zahlen in `config/local.yaml` von Hand anpassen, oder eine andere
+  Aufnahme nehmen, in der du gut zu sehen bist.
+- **Keine Kamera gefunden?** Dann steht `facecam: null` im Block. Das ist richtig, wenn du ohne Cam aufnimmst.
+- Das Layout bleibt gleich, solange du deine OBS-Szene nicht umbaust. Der Befehl ist also nur einmal nötig.
 
 ## Eigene Einstellungen
 
@@ -81,7 +127,7 @@ uv run nightcut run aufnahme.mkv --config config/local.yaml --profile bf6
 ```
 
 Die wichtigsten Punkte:
-- `layout` – wo Gameplay und Facecam in deiner Aufnahme liegen (Anteile von 0 bis 1)
+- `layout` – wo Gameplay und Facecam in deiner Aufnahme liegen (Anteile von 0 bis 1, ermittelt `nightcut layout`)
 - `audio` – Namen deiner Audiospuren
 - `editor.target_minutes` – gewünschte Videolänge
 - `transcribe.language` – Sprache deines Kommentars
@@ -149,8 +195,9 @@ Schnittstärke (`--strength`):
 Die Timelines zeigen direkt auf deine Original-Aufnahmen. Ein Schnitt ist nur ein Ein-
 und Ausstiegspunkt: Gefällt dir einer nicht, ziehst du den Clip in DaVinci einfach wieder auf.
 
-**Facecam fest im Bild und nur eine Tonspur?** Nimm `config/examples/burned-in-cam.yaml`
-und trag ein, wo deine Cam sitzt. Sonst hält nightcut ein stehendes Spielbild wegen der
+**Facecam fest im Bild und nur eine Tonspur?** Kopiere `config/examples/burned-in-cam.yaml` nach
+`config/local.yaml` und lass `nightcut layout <aufnahme> --save config/local.yaml` eintragen, wo deine
+Cam sitzt. (Die Beispieldatei selbst nicht ändern, sonst klappt das Update per `install.bat` nicht.) Sonst hält nightcut ein stehendes Spielbild wegen der
 bewegten Cam für „Bewegung“.
 
 **Ruhige Session?** Hat eine Aufnahme zu wenige starke Momente, fragt nightcut beim Start, ob
@@ -164,6 +211,37 @@ denselben Befehl erneut aus und nightcut macht dort weiter, wo es aufgehört hat
 einzelnen Schritt wiederholen: `--force vision` (oder `audio`, `transcript`,
 `candidates`, `edit`, `render`, `export`, `shorts`, `metadata`; im Let's-Play-Modus
 `audio`, `scan`, `transcript`, `cuts`, `episodes`, `export`, `metadata`).
+
+## Zwei Grafikkarten
+
+Steckt eine zweite NVIDIA-Karte im PC (z.B. RTX 5080 + RTX 5060 Ti), nutzt nightcut im
+Highlight-Modus automatisch beide. Du musst nichts einstellen, der Befehl bleibt derselbe:
+
+```bash
+uv run nightcut run "D:/Aufnahmen/session.mkv" --profile bf2042 --config config/local.yaml
+```
+
+So teilen sich die Karten die Arbeit:
+- **Killfeed und Bildanalyse** (der größte Brocken): Hunderte einzelne Bilder an das Bildmodell. Jede Karte
+  bekommt einen eigenen Ollama-Server, beide nehmen sich das nächste Bild aus derselben Warteschlange.
+  Die schnellere Karte schafft automatisch mehr.
+- **Transkript**: läuft auf der zweiten Karte, während die erste schon den Killfeed liest. Danach hilft die
+  zweite Karte beim Killfeed mit.
+- **Am Ende**: Clips werden auf beiden Karten gerendert, die Shorts entstehen auf der zweiten Karte, während die
+  erste die Metadaten schreibt.
+
+Beim Start siehst du, welche Karten genutzt werden (`GPUs: … → sharing the work`). Im `report.md` stehen
+die Karten, die Gesamtzeit und der VRAM pro Karte (z.B. `9.8 / 6.1 GB`). Stufen, die gleichzeitig liefen,
+sind markiert und werden bei der Gesamtzeit nicht doppelt gezählt.
+
+- **Vergleichen:** `--gpus 1` rechnet nur auf der Hauptkarte, `--gpus 2` (oder nichts) auf beiden.
+  Mit einem anderen `--name` landen beide Läufe in eigenen Ordnern.
+- **Hauptkarte** ist die Karte im ersten PCIe-Steckplatz (GPU 0 in `nvidia-smi`). Andere Reihenfolge:
+  `gpus.devices: [1, 0]` in `config/local.yaml`.
+- Karten unter 10 GB VRAM werden nicht genutzt (`gpus.min_vram_gb`).
+- nightcut startet die zwei Ollama-Server selbst (Ports ab 11435) und beendet sie am Ende wieder.
+  Dein normales Ollama läuft einfach weiter.
+- Der Let's-Play-Modus nutzt weiterhin eine Karte.
 
 ## Eigenes Spiel hinzufügen
 

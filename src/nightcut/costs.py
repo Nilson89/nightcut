@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import yaml
@@ -9,6 +10,13 @@ import yaml
 from .config import ROOT
 
 PRICING_FILE = ROOT / "config" / "pricing.yaml"
+_lock = threading.Lock()
+
+
+def total_seconds(stages: dict) -> float:
+    """Processing time of a run. Stages that ran at the same time as another one (2 GPUs) are
+    marked `parallel`; their time is already inside that stage."""
+    return sum(s["seconds"] for s in stages.values() if not s.get("parallel"))
 
 
 class Usage:
@@ -24,9 +32,10 @@ class Usage:
         self.transcribe_minutes = 0.0
 
     def add_llm(self, input_tokens: int, output_tokens: int, images: int = 0) -> None:
-        self.input_tokens += int(input_tokens or 0)
-        self.output_tokens += int(output_tokens or 0)
-        self.images += images
+        with _lock:  # with several GPUs, model answers arrive at the same time
+            self.input_tokens += int(input_tokens or 0)
+            self.output_tokens += int(output_tokens or 0)
+            self.images += images
 
     def as_dict(self) -> dict:
         return {"input_tokens": self.input_tokens, "output_tokens": self.output_tokens,

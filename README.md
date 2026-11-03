@@ -82,12 +82,46 @@ If your facecam is part of the recorded canvas (e.g. gameplay on top, camera bel
 describe both regions in the `layout` section of your config. nightcut cuts them into
 separate files, so you can place the camera freely in your editor.
 
+## Where is your facecam? `nightcut layout`
+
+No need to measure anything. Run this once in the nightcut folder with one of your recordings:
+
+```bash
+uv run nightcut layout "D:/Recordings/session.mkv" --save config/local.yaml
+```
+
+nightcut looks at 8 frames spread over the recording. A **canvas layout** (gameplay and camera
+side by side or stacked) is found without AI: whatever stays black in every frame is empty space.
+A **camera burned into the game picture** (also with the background removed) is found by the
+vision model on each frame, and the boxes are combined into one region you can move around in.
+
+You get the `layout` block and a preview `layout_<recording>.png` in the nightcut folder (green:
+gameplay, orange: camera); have a quick look at it. With `--save` the block goes straight into your
+config: the file is created if needed, an existing `layout` section is replaced and everything else
+stays as it is. Then use that config for every run:
+
+```bash
+uv run nightcut run "D:/Recordings/session.mkv" --profile bf6 --config config/local.yaml
+```
+
+```yaml
+# found by nightcut layout: session.mkv (2026-11-03)
+layout:
+  gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
+  facecam:  { x: 0.79, y: 0.76, w: 0.21, h: 0.24 }   # fractions: x/y top left corner, w/h size
+  facecam_burned_in: true
+```
+
+Without `--save` the block is only printed; copy it into `config/local.yaml` yourself. If the box is
+off, edit the numbers or try a recording where you are clearly visible. `facecam: null` means no
+camera was found. You only need to do this again when you change your OBS scene.
+
 ## Configuration
 
 Copy `config/default.yaml` to `config/local.yaml`, change what you need and pass it
 with `--config config/local.yaml`. The most important settings:
 
-- `layout`: where gameplay and facecam are in your recording (fractions of the frame)
+- `layout`: where gameplay and facecam are in your recording (fractions of the frame; `nightcut layout` finds them)
 - `audio`: track names of mic, game and voice chat
 - `editor.target_minutes`: length of the final video
 - `vision.model`, `editor.model`: which Ollama models to use
@@ -162,9 +196,29 @@ The episode timelines point at your original recordings. A cut is only an in/out
 so you can pull any removed part back in the editor. Recordings with a stacked layout
 (separate facecam area) are rendered into clean files instead.
 
-**Facecam burned into the picture, one mixed audio track?** Use
-`config/examples/burned-in-cam.yaml` and set where your cam sits, so the moving cam does
-not hide a frozen game picture.
+**Facecam burned into the picture, one mixed audio track?** Copy
+`config/examples/burned-in-cam.yaml` to `config/local.yaml` and let
+`nightcut layout <recording> --save config/local.yaml` set where your cam sits, so the moving cam
+does not hide a frozen game picture. (Don't edit the example itself, or updating via `install.bat` fails.)
+
+## Two GPUs
+
+With a second NVIDIA card in the PC (e.g. RTX 5080 + RTX 5060 Ti), highlights mode uses both
+automatically; the command stays the same.
+
+- **Kill feed and vision check** (the biggest part): hundreds of independent model calls. Each card gets
+  its own Ollama server and both take the next image from one queue, so the faster card does more.
+- **Transcript** runs on the second card while the first one starts the kill feed; then the second card
+  joins the kill feed scan.
+- **At the end** clips are rendered on both encoders, Shorts are made on the second card while the first
+  one writes the metadata.
+
+The start shows which cards are used (`GPUs: … → sharing the work`). `report.md` lists the cards, the
+total time and VRAM per card (`9.8 / 6.1 GB`); stages that ran at the same time are marked and not
+counted twice. Compare with `--gpus 1` (main card only) and a different `--name`. The main card is the
+one in the first PCIe slot (GPU 0 in `nvidia-smi`); change the order with `gpus.devices: [1, 0]`. Cards
+below 10 GB VRAM are left out (`gpus.min_vram_gb`). nightcut starts and stops the two Ollama servers
+itself (ports from 11435); your normal Ollama keeps running. Let's Play mode still uses one card.
 
 ## Importing the timeline
 
@@ -186,7 +240,8 @@ episodes, best title, processing time, cloud vs. local cost).
 ```bash
 nightcut run <recording> [<recording> ...] [--mode highlights|letsplay] [--profile bf6]
              [--config my.yaml] [--output dir] [--name folder] [--strength gentle|normal|tight]
-             [--no-vision] [--no-llm] [--fill|--no-fill] [--force <stage>]
+             [--no-vision] [--no-llm] [--fill|--no-fill] [--gpus auto|1|2] [--force <stage>]
+nightcut layout <recording> [--save config/local.yaml]
 nightcut summary <output folder> [...]
 nightcut profiles
 ```
