@@ -1,0 +1,7 @@
+name: Pokémon Schwert/Schild
+game_type: other
+# Turn-based RPG on Switch: trainer battles, wild encounters, dialogue boxes, exploring routes.
+keywords:
+  2.0: [krass, alter, oh mein gott, boah, wie geil, shiny, kritischer treffer, besiegt, gefangen, nein]
+  1.0: [geil, nice, haha, warum, mist, sehr effektiv, entwickelt]
+vision_hints: "Pokémon Sword/Shield (Nintendo Switch), German UI. Turn-based battles with move menus and HP bars, dialogue boxes, exploring routes. Highlights: a Pokémon is caught or evolves, a close battle is won, a critical hit, a shiny, a gym or boss battle. Dialogue boxes and battle menus during a battle are gameplay, not idle menus."

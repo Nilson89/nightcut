@@ -1,0 +1,12 @@
+# Recordings where the facecam is already part of the picture and all audio
+# is mixed into one track (typical for finished episodes or simple OBS setups).
+#   nightcut run ep01.mp4 ep02.mp4 --mode letsplay --config config/examples/burned-in-cam.yaml
+layout:
+  gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
+  facecam:  { x: 0.83, y: 0.76, w: 0.17, h: 0.24 }   # where the cam sits; ignored for motion checks
+  facecam_burned_in: true
+
+audio:
+  mic:   { title: null, index: 0 }   # the mixed track
+  game:  null
+  party: null

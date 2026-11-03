@@ -1,0 +1,63 @@
+# Prices for the "what would the cloud have cost" comparison in report.md.
+# API prices change often. Check the sources and update the date before you rely on it.
+
+checked: 2026-10-29
+currency: EUR
+usd_per_eur: 1.1133              # ECB reference rate 2026-10-28
+
+electricity:
+  eur_per_kwh: 0.37              # BDEW household average 2026 (3,500 kWh/year)
+  system_overhead_w: 120         # CPU, board, RAM, fans, SSD while the pipeline runs (GPU is measured)
+
+# Cloud tiers. Vision and editing are billed with the same text/image model per tier.
+cloud_tiers:
+  budget:
+    label: "Cloud budget (OpenAI gpt-transcribe + Gemini 3.1 Flash-Lite)"
+    transcription_usd_per_min: 0.0045
+    llm_input_usd_per_mtok: 0.25
+    llm_output_usd_per_mtok: 1.50
+  premium:
+    label: "Cloud premium (OpenAI gpt-4o-transcribe + gpt-6.1-sol)"
+    transcription_usd_per_min: 0.006
+    llm_input_usd_per_mtok: 2.00
+    llm_output_usd_per_mtok: 10.00
+
+# Projection in the report. Set gpu_price_eur to show when the GPU has paid for itself.
+projection:
+  sessions_per_week: 3
+  gpu_price_eur: null
+
+# Monthly subscriptions people actually use, for the per-year comparison in report.md.
+# Clipping tools sell processing minutes; AI chat subscriptions have usage limits instead.
+# usd_per_month is converted with usd_per_eur (US list prices, usually without VAT).
+subscriptions:
+  opusclip_pro:
+    label: "OpusClip Pro (clipping tool)"
+    usd_per_month: 29.00
+    minutes_per_month: 300
+    note: "max. 30 GB per upload"
+  eklipse_premium:
+    label: "Eklipse Premium (gaming clips)"
+    usd_per_month: 24.99
+    minutes_per_month: null      # not published
+    note: "limits not published"
+  chatgpt_plus:
+    label: "ChatGPT Plus (AI subscription)"
+    eur_per_month: 22.99
+    minutes_per_month: null
+    note: "usage limits per 5 h, no video pipeline built in"
+  claude_pro:
+    label: "Claude Pro (AI subscription)"
+    eur_per_month: 22.00
+    minutes_per_month: null
+    note: "usage limits per 5 h and per week, no video pipeline built in"
+
+sources:
+  - https://www.bdew.de/service/daten-und-grafiken/bdew-strompreisanalyse/
+  - https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml
+  - https://developers.openai.com/api/docs/pricing
+  - https://ai.google.dev/gemini-api/docs/pricing
+  - https://www.opus.pro/pricing                     # subscriptions checked 2026-11-02
+  - https://help.opus.pro/docs/article/plans-and-credits
+  - https://eklipse.gg/help/how-much-does-eklipse-premium-cost/
+  - https://kingy.ai/blog/chatgpt-claude-gemini-prices-germany/   # German App Store prices incl. VAT, 2026-10-19

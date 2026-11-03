@@ -1,0 +1,164 @@
+# nightcut default configuration.
+# Copy this file to config/local.yaml and override only what you need:
+#   nightcut run recording.mkv --config config/local.yaml --profile bf2042
+
+# Where results are written. One subfolder per recording.
+output_dir: ./output
+
+# highlights: the best moments of a session as one video.
+# letsplay:   keep everything, cut only dead air, split into episodes.
+mode: highlights
+
+# Source layout. Regions are fractions of the full recorded frame (0..1),
+# so they work for the original file and for downscaled copies alike.
+# The default matches a 2560x2520 canvas: gameplay 2560x1440 on top,
+# facecam 1920x1080 bottom left.
+layout:
+  gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 0.571429 }
+  facecam:  { x: 0.0, y: 0.571429, w: 0.75, h: 0.428571 }   # set to null if you record without facecam
+  facecam_burned_in: false   # true if the cam is already part of the gameplay picture (see config/examples)
+
+# Audio streams, matched by their title (OBS track names). A title also matches the start of
+# a longer name ("MIC" finds "MIC Main Headset"), and several names can be given as a list.
+# Falls back to the given stream position (0-based, audio streams only) if no title matches.
+audio:
+  mic:   { title: MIC,   index: 1 }
+  game:  { title: GAME,  index: 2 }
+  party: { title: [PARTY, DISCORD, TEAMSPEAK], index: 3 }    # voice chat; set to null if unused
+  mix:   null    # full mix, e.g. { title: null, index: 0 }; only needed when a voice is heard nowhere else (AI assistant, TTS)
+  sample_rate: 16000
+
+# Speech-to-text on the mic track.
+transcribe:
+  enabled: true
+  model: openai/whisper-large-v3-turbo
+  language: german
+  batch_size: 16
+  # Only regions where the mic is actually active are transcribed. This is
+  # faster and avoids Whisper hallucinating text into silence.
+  voice_margin_db: 12
+  max_chunk_s: 28
+
+# Signal weights for the highlight score (per 0.25 s frame).
+signals:
+  mic: 1.0
+  game: 0.6
+  party: 0.5
+  keywords: 1.2
+  smooth_s: 2.0
+
+# Candidate selection before vision/LLM.
+candidates:
+  max_count: 40           # at least this many ...
+  per_hour: 30            # ... or this many per hour of recording, whichever is higher
+  min_gap_s: 25
+  pre_roll_s: 12
+  post_roll_s: 6
+  snap_to_speech_s: 4     # extend a cut so it does not end mid-sentence
+  min_score_percentile: 97
+
+# Vision check of candidates (Ollama, multimodal model).
+vision:
+  enabled: true
+  model: qwen2.5vl:7b
+  frames_per_candidate: 4
+  frame_width: 1024
+
+# Kill feed scan: finds your kills even without a loud reaction. Needs your in-game
+# name and a killfeed_region in the game profile; otherwise it is skipped.
+killfeed:
+  enabled: true
+  player_names: []        # e.g. ["Nilson1489"]; several names if you play on different accounts
+  every_s: 4              # one look at the feed every few seconds (lines stay visible ~5 s)
+  panels_per_call: 6      # feed crops stacked into one image per model call
+  multikill_gap_s: 15     # kills closer than this form one moment
+  model: null             # default: the vision model
+
+# Editing decisions (Ollama, text model).
+editor:
+  enabled: true
+  model: qwen3:14b
+  target_minutes: 14
+  max_clip_s: 60
+  max_candidates: 60      # only the best ones go to the LLM, so the prompt fits its context
+  fill: null              # calm session: true = fill up with quiet moments, false = shorter video, null = ask at start
+
+# Let's Play mode (--mode letsplay).
+letsplay:
+  episodes: by_length     # by_length: split near episode_minutes | per_recording: every recording is one episode
+  episode_minutes: 25
+  tolerance: 0.2          # an episode may be 20 % shorter or longer to end at a natural break
+  strength: gentle        # gentle | normal | tight
+  strengths:
+    gentle: { remove: [menu, loading, pause, black, afk], min_gap_s: 8 }
+    normal: { remove: [menu, loading, pause, black, afk, silence], min_gap_s: 5, silence_s: 30 }
+    tight:  { remove: [menu, loading, pause, black, afk, silence], min_gap_s: 3, silence_s: 12 }
+  series_name: null       # default: the profile name
+  first_episode: 1        # number of the first episode of this run, e.g. 226 to continue a series
+  title_format: "{series} #{n} – {title}"   # how episode titles are built
+  still_motion: 2.5       # keyframe change below this counts as a still picture
+  black_luma: 12
+  afk_s: 30               # still game picture without talking for this long = AFK
+  keep_pad_s: 1.0         # seconds kept around every cut
+  vision_frames: 3
+  file_break_score: 1.0   # how natural the switch to the next recording is as an episode end
+  file_break_reach: 2.0   # ... and how much further from the ideal length it may be (x tolerance)
+  protect_voices: [party, mix]   # no cuts while someone talks on these tracks, although your mic is quiet
+  reference_source: true  # timelines point at the original files (no render) when the layout allows it
+  break_phrases: ["das war's für heute", "bis zum nächsten mal", "in der nächsten folge", "bis morgen",
+                  "machen wir morgen weiter", "schluss für heute", "das war's für diese folge"]
+
+# Ollama server.
+ollama:
+  url: http://localhost:11434
+  keep_alive: 0           # unload after each call; keeps a 16 GB card free for the next step
+  timeout_s: 600
+
+# Consolidated, edit-friendly media for the timeline.
+render:
+  handles_s: 3            # extra seconds before/after each clip for trimming
+  codec: h264_nvenc
+  cq: 18
+  audio_bitrate: 256k
+
+# Timeline export.
+export:
+  sequence_name_suffix: nightcut
+  facecam_pip:
+    enabled: true
+    scale: 28             # percent of original size
+    corner: bottom_right
+    margin: 0.03          # fraction of frame width
+
+# Vertical Shorts from the strongest clips.
+shorts:
+  enabled: true
+  count: 3
+  min_s: 10
+  max_s: 59
+  font: Bebas Neue          # must be installed, or put the .ttf into fonts_dir
+  fonts_dir: null
+  font_size: 120
+  outline: 7
+  words_per_caption: 3
+  highlight_color: "#ff5e1a"
+
+# Thumbnail drafts (1280x720): the recording on the left, the Shorts on the right.
+# Experimental, off for now: set enabled: true in your config to try it.
+thumbnails:
+  enabled: false
+  count: 3
+  texts:                  # [black part, part in the accent box]; one pair per draft, repeated
+    - ["VIDEOS AUF", "AUTOPILOT"]
+    - ["KOSTENLOS", "ÜBER NACHT"]
+    - ["EINE NACHT", "EIN VIDEO"]
+  accent: "#ff5e1a"
+  font: null              # headline font file; default: Bebas Neue if installed, else a built-in font
+  badge_font: null        # font for the duration badge; default: Arial Bold / DejaVu Sans Bold
+
+# Title ideas, description, chapters and tags (youtube.txt).
+metadata:
+  enabled: true
+
+# Price list for the cloud-vs-local comparison (default: config/pricing.yaml).
+pricing_file: null

@@ -1,0 +1,39 @@
+[project]
+name = "nightcut"
+version = "0.1.0"
+description = "Overnight local-AI pipeline that turns raw gameplay recordings into editor-ready timelines, Shorts and metadata."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "typer>=0.12",
+    "rich>=13.7",
+    "torch>=2.7",
+    "transformers>=4.46",
+    "accelerate>=1.0",
+    "pillow>=10.0",
+]
+
+[project.scripts]
+nightcut = "nightcut.cli:app"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu128" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/nightcut"]

@@ -1,0 +1,6 @@
+name: A Way Out
+# Coop story game: mostly dialogue and cutscenes, so few keyword reactions.
+keywords:
+  2.0: [krass, alter, oh mein gott, nein, los]
+  1.0: [geil, hilfe, schnell]
+vision_hints: "A Way Out: two-player split-screen coop story game. Cutscenes are letterboxed."

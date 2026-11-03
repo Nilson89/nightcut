@@ -1,0 +1,6 @@
+testdata/
+.venv/
+output/
+__pycache__/
+*.pyc
+config/local.yaml

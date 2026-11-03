@@ -1,0 +1,22 @@
+# Game profile: Battlefield 2042.
+# A profile only overrides what is game specific: keywords, vision prompt hints.
+
+name: Battlefield 2042
+game_type: shooter     # offers kill, multikill, death ... to the vision model
+
+# Words in the mic transcript that usually mean something happened.
+# Weight is added to the highlight score for the duration of the sentence.
+keywords:
+  3.0: ["let's go", "lets go", "oh mein gott", "alter", "digga", "jaaa", "boah", "ach du scheiße", "was war das"]
+  2.0: ["krass", "geil", "sauber", "nice", "haha", "hahaha", "wie geil", "doppelkill", "doppel", "tripple", "triple", "squad wipe", "alle tot"]
+  1.0: ["nein", "neee", "ey", "warum", "wo kam der", "wie", "schon wieder", "gg"]
+
+vision_hints: |
+  The game is Battlefield 2042 (first-person shooter, German UI).
+  Signs of a highlight: kill notifications with XP numbers near the screen centre,
+  several kills in a row, vehicle destroyed, large explosions, a squad wipe,
+  round won screen. Signs of a death: kill-cam showing the enemy, grey screen,
+  "Wiederbelebung" (revive) prompts, the respawn map.
+
+# Where the kill feed sits, as fractions of the gameplay picture (see killfeed in config).
+killfeed_region: { x: 0.0, y: 0.47, w: 0.30, h: 0.19 }
