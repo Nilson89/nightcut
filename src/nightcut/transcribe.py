@@ -26,8 +26,15 @@ def load_asr(cfg: dict):
     import torch
     from transformers import pipeline
 
-    device = int(cfg.get("device") or 0) if torch.cuda.is_available() else -1  # GPU index (second card in 2-GPU mode)
-    dtype = torch.float16 if device >= 0 else torch.float32
+    if torch.cuda.is_available():
+        device = int(cfg.get("device") or 0)  # GPU index (second card in 2-GPU mode)
+        dtype = torch.float16
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device = "mps"
+        dtype = torch.float16
+    else:
+        device = -1
+        dtype = torch.float32
     return pipeline("automatic-speech-recognition", model=cfg["model"], torch_dtype=dtype, device=device)
 
 
@@ -37,6 +44,8 @@ def free_vram() -> None:
 
     if torch.cuda.is_available():
         torch.cuda.empty_cache()  # free VRAM for the next step
+    elif hasattr(torch, "mps") and hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        torch.mps.empty_cache()  # release cached unified memory before Ollama/rendering starts
 
 
 def transcribe_regions(pcm: np.ndarray, sample_rate: int, regions: list[tuple[float, float]], cfg: dict,

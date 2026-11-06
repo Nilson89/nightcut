@@ -7,6 +7,7 @@ import natively (Resolve: File > Import > Timeline, Premiere: File > Import).
 from __future__ import annotations
 
 import os
+import re
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
@@ -30,7 +31,8 @@ def _sub(parent: ET.Element, tag: str, text: str | int | None = None, **attrs) -
 
 def _pathurl(path: str) -> str:
     # abspath, not resolve(): resolve() turns a mapped drive (Z:) into a UNC path editors cannot open.
-    p = Path(os.path.abspath(path)).as_posix()
+    # Keep Windows drive paths intact even when an XML is generated or tested on another OS.
+    p = path.replace("\\", "/") if re.match(r"^[A-Za-z]:[\\/]", path) else Path(os.path.abspath(path)).as_posix()
     if p.startswith("//"):  # UNC share: file://server/share/...
         return "file:" + quote(p, safe="/:")
     return "file://localhost/" + quote(p, safe="/:")

@@ -30,11 +30,12 @@ continues where it stopped.
 
 ## Requirements
 
-- NVIDIA GPU with **16 GB VRAM** (built and tested to stay below 16 GB; RTX 5080/5070 Ti/5060 Ti 16 GB class)
+- NVIDIA GPU with **16 GB VRAM**, or an Apple Silicon Mac with **16 GB unified memory or more**
+  running macOS 14 or newer (tested on M1 Pro; more memory is recommended for larger local models)
 - [ffmpeg](https://ffmpeg.org/) in your PATH
 - [Ollama](https://ollama.com/)
 - [uv](https://docs.astral.sh/uv/) (installs Python and all packages)
-- Windows or Linux
+- Windows, Linux or Apple Silicon macOS
 
 ## One-click install (Windows)
 
@@ -44,12 +45,26 @@ Git, ffmpeg, Ollama and uv via winget, clones nightcut to your desktop (or `C:\n
 desktop shortcut if your desktop is synced by OneDrive), runs `uv sync` and pulls both models.
 About 25 GB of free space needed; your NVIDIA driver must already be up to date. Run it again to update.
 
+## One-command install (Apple Silicon macOS)
+
+Download `install-macos.sh`, then run:
+
+```bash
+chmod +x install-macos.sh
+./install-macos.sh
+```
+
+The script installs Homebrew when needed, then Git, FFmpeg, Ollama and uv. It clones nightcut to
+`~/nightcut`, creates the Python environment and downloads both Ollama models. Run it again to update.
+Ollama and PyTorch use Metal automatically; FFmpeg uses VideoToolbox for H.264. The installer currently
+targets M1 or newer Macs running macOS 14 or newer. About 25 GB of free space is required.
+
 ## Quick start (manual)
 
 ```bash
 git clone https://github.com/Nilson89/nightcut.git
 cd nightcut
-uv sync                       # installs Python 3.12, PyTorch (CUDA 12.8) and dependencies
+uv sync                       # installs Python 3.12 and native PyTorch (CUDA on NVIDIA, Metal on macOS)
 ollama pull qwen2.5vl:7b      # vision model
 ollama pull qwen3:14b         # editing model
 
@@ -58,6 +73,10 @@ uv run nightcut run "D:/Recordings/session.mkv" --profile bf6
 
 The Whisper model is downloaded automatically on the first run. Model weights are never
 part of this repository; they come from their official sources under their own licenses.
+
+On macOS, leave `render.codec: auto` in the config. nightcut selects `h264_videotoolbox` and falls
+back to `libx264` if necessary. If the installed FFmpeg lacks the `subtitles` filter, Shorts use an
+automatic portable caption-overlay fallback instead.
 
 **Windows, nightcut on a network drive (NAS):** `uv run` and `nightcut.exe` resolve a mapped drive
 to its `\\server\share` path, and Windows then fails to load the NumPy/PyTorch DLLs
@@ -125,6 +144,7 @@ with `--config config/local.yaml`. The most important settings:
 - `audio`: track names of mic, game and voice chat
 - `editor.target_minutes`: length of the final video
 - `vision.model`, `editor.model`: which Ollama models to use
+- `render.codec`: `auto` selects VideoToolbox on macOS, NVENC on NVIDIA systems, otherwise libx264
 
 ## Game profiles
 
@@ -201,10 +221,12 @@ so you can pull any removed part back in the editor. Recordings with a stacked l
 `nightcut layout <recording> --save config/local.yaml` set where your cam sits, so the moving cam
 does not hide a frozen game picture. (Don't edit the example itself, or updating via `install.bat` fails.)
 
-## Two GPUs
+## Two NVIDIA GPUs
 
 With a second NVIDIA card in the PC (e.g. RTX 5080 + RTX 5060 Ti), highlights mode uses both
 automatically; the command stays the same.
+
+Apple Silicon uses its single integrated GPU through Metal and ignores the NVIDIA multi-GPU settings.
 
 - **Kill feed and vision check** (the biggest part): hundreds of independent model calls. Each card gets
   its own Ollama server and both take the next image from one queue, so the faster card does more.

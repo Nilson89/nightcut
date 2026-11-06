@@ -126,8 +126,9 @@ gpus:
 # Consolidated, edit-friendly media for the timeline.
 render:
   handles_s: 3            # extra seconds before/after each clip for trimming
-  codec: h264_nvenc
+  codec: auto              # macOS: h264_videotoolbox; NVIDIA: h264_nvenc; fallback: libx264
   cq: 18
+  video_bitrate: 12M       # used by VideoToolbox (NVENC/libx264 use cq/crf instead)
   audio_bitrate: 256k
 
 # Timeline export.
@@ -142,6 +143,7 @@ export:
 # Vertical Shorts from the strongest clips.
 shorts:
   enabled: true
+  caption_backend: auto    # libass subtitles when available; portable alpha-video fallback otherwise
   count: 3
   min_s: 10
   max_s: 59

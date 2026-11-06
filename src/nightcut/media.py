@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 import numpy as np
@@ -134,6 +136,62 @@ def grab_frames(src: Path, times: list[float], region: dict, src_w: int, src_h: 
 def encoder_gpu(codec: str, gpu: int | None) -> list[str]:
     """ffmpeg option that puts an NVENC encoder on a given GPU (index in PCI order, like nvidia-smi)."""
     return ["-gpu", str(gpu)] if gpu is not None and "nvenc" in codec else []
+
+
+@cache
+def ffmpeg_encoders() -> set[str]:
+    """Names of video encoders available in the active FFmpeg build."""
+    try:
+        out = run(["ffmpeg", "-hide_banner", "-encoders"], capture_output=True, text=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {line.split()[1] for line in out.splitlines() if len(line.split()) >= 2 and line.lstrip().startswith("V")}
+
+
+@cache
+def ffmpeg_filters() -> set[str]:
+    """Names of filters available in the active FFmpeg build."""
+    try:
+        out = run(["ffmpeg", "-hide_banner", "-filters"], capture_output=True, text=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    return {line.split()[1] for line in out.splitlines() if len(line.split()) >= 2 and line.lstrip()[:1] in ".TSC"}
+
+
+@cache
+def nvidia_runtime_available() -> bool:
+    """True only when an NVIDIA driver and at least one usable GPU are present."""
+    try:
+        out = run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "GPU " in out
+
+
+def resolve_encoder(codec: str) -> str:
+    """Resolve `auto` to VideoToolbox on macOS, NVENC elsewhere, then software x264."""
+    if codec != "auto":
+        return codec
+    available = ffmpeg_encoders()
+    preferred = "h264_videotoolbox" if sys.platform == "darwin" else "h264_nvenc"
+    if preferred in available and (preferred != "h264_nvenc" or nvidia_runtime_available()):
+        return preferred
+    if "libx264" in available:
+        return "libx264"
+    raise RuntimeError("No supported H.264 encoder found in FFmpeg (tried VideoToolbox, NVENC and libx264)")
+
+
+def encoder_options(codec: str, quality: int, gpu: int | None = None, bitrate: str | None = None) -> list[str]:
+    """Portable ffmpeg encoder options for NVIDIA, macOS VideoToolbox, or software x264."""
+    codec = resolve_encoder(codec)
+    common = ["-c:v", codec, *encoder_gpu(codec, gpu)]
+    if "nvenc" in codec:
+        return common + ["-preset", "p5", "-rc", "vbr", "-cq", str(quality), "-b:v", "0"]
+    if codec == "libx264":
+        return common + ["-preset", "medium", "-crf", str(quality)]
+    if "videotoolbox" in codec:
+        return common + ["-b:v", bitrate or "12M", "-allow_sw", "1", "-realtime", "0"]
+    return common
 
 
 def region_pixels(region: dict, src_w: int, src_h: int) -> tuple[int, int, int, int]:
