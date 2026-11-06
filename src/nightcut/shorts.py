@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import re
+import subprocess
 from pathlib import Path
 
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 
-from .media import AudioStream, MediaInfo, crop_filter, encoder_gpu, run
+from .media import AudioStream, MediaInfo, crop_filter, encoder_options, ffmpeg_filters, run
 
 W, H = 1080, 1920
 
@@ -79,6 +82,84 @@ def _filter_path(p: Path) -> str:
     return p.resolve().as_posix().replace(":", r"\:").replace("'", r"\'")
 
 
+def _ass_seconds(value: str) -> float:
+    h, m, s = value.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s)
+
+
+def _caption_backend(scfg: dict) -> str:
+    backend = scfg.get("caption_backend", "auto")
+    if backend == "auto":
+        return "subtitles" if "subtitles" in ffmpeg_filters() else "png_video"
+    if backend not in {"subtitles", "png_video"}:
+        raise ValueError(f"Unknown shorts.caption_backend: {backend}")
+    return backend
+
+
+def _png_caption_video(ass: Path, scfg: dict, duration: float) -> Path:
+    """Render captions to one small alpha MOV; avoids one FFmpeg filter graph per word."""
+    events = []
+    for line in ass.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("Dialogue:"):
+            continue
+        parts = line.split(",", 9)
+        if len(parts) != 10:
+            continue
+        raw = parts[9]
+        highlighted = re.search(r"\{\\c&H[0-9A-F]+\}(.+?)\{\\c&H00FFFFFF\}", raw, re.IGNORECASE)
+        events.append((_ass_seconds(parts[1]), _ass_seconds(parts[2]),
+                       re.sub(r"\{[^}]*\}", "", raw).strip(),
+                       highlighted.group(1) if highlighted else ""))
+
+    mov = ass.with_suffix(".captions.mov")
+    font_name = str(scfg.get("font") or "Arial Bold")
+    candidates = [
+        Path(scfg.get("fonts_dir") or "") / f"{font_name}.ttf",
+        Path(font_name),
+        Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf"),
+        Path("/Library/Fonts/Arial Bold.ttf"),
+        Path("C:/Windows/Fonts/arialbd.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    ]
+    font_path = next((path for path in candidates if path.is_file()), None)
+    if font_path is None:
+        raise RuntimeError(f"Caption font '{font_name}' was not found; set shorts.fonts_dir in the config")
+    font = ImageFont.truetype(str(font_path), int(scfg["font_size"]))
+    images = []
+    for _, _, text, highlight in events:
+        image = Image.new("RGBA", (W, 260), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(image)
+        words = text.split()
+        widths = [draw.textlength(w, font=font) for w in words]
+        space = draw.textlength(" ", font=font)
+        x = (W - sum(widths) - space * max(0, len(words) - 1)) / 2
+        target, used = highlight.strip(), False
+        for word, width in zip(words, widths):
+            selected = not used and word == target
+            draw.text((x, 45), word, font=font, fill=scfg["highlight_color"] if selected else "white",
+                      stroke_width=int(scfg["outline"]), stroke_fill="black")
+            used = used or selected
+            x += width + space
+        images.append(image)
+
+    cmd = ["ffmpeg", "-hide_banner", "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "rgba",
+           "-s", f"{W}x260", "-r", "30", "-i", "-", "-an", "-c:v", "qtrle", "-pix_fmt", "argb", str(mov)]
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+    assert proc.stdin is not None
+    blank = Image.new("RGBA", (W, 260), (0, 0, 0, 0)).tobytes()
+    index = 0
+    for frame in range(max(1, round(duration * 30))):
+        t = frame / 30
+        while index < len(events) and t > events[index][1]:
+            index += 1
+        data = images[index].tobytes() if index < len(events) and events[index][0] <= t <= events[index][1] else blank
+        proc.stdin.write(data)
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError("Could not render PNG caption video")
+    return mov
+
+
 def render(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream], ass: Path, cfg: dict,
            out_dir: Path, gpu: int | None = None) -> Path:
     scfg = cfg["shorts"]
@@ -92,21 +173,30 @@ def render(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream],
         game_h = H - cam_h
         graph = (f"[0:v]{crop_filter(lay['facecam'], info.width, info.height)},scale={W}:{cam_h}:force_original_aspect_ratio=increase,crop={W}:{cam_h}[cam];"
                  f"[0:v]{crop_filter(lay['gameplay'], info.width, info.height)},"
-                 f"crop=ih*{W}/{game_h}:ih,scale={W}:{game_h}[game];[cam][game]vstack[stack];")
+                 f"crop=ih*{W}/{game_h}:ih,scale={W}:{game_h}[game];[cam][game]vstack,setsar=1[stack];")
         src = "[stack]"
     else:
-        graph = f"[0:v]{crop_filter(lay['gameplay'], info.width, info.height)},crop=ih*9/16:ih,scale={W}:{H}[stack];"
+        graph = f"[0:v]{crop_filter(lay['gameplay'], info.width, info.height)},crop=ih*9/16:ih,scale={W}:{H},setsar=1[stack];"
         src = "[stack]"
-    sub = f"subtitles=filename='{_filter_path(ass)}'"
-    if scfg.get("fonts_dir"):
-        sub += f":fontsdir='{_filter_path(Path(scfg['fonts_dir']))}'"
-    graph += f"{src}{sub}[v];"
+    caption_video = None
+    caption_backend = _caption_backend(scfg)
+    if caption_backend == "png_video":
+        caption_video = _png_caption_video(ass, scfg, dur)
+        graph += f"{src}[1:v]overlay=0:{max(0, caption_y(cfg) - 130)}:eof_action=pass,setsar=1[v];"
+    else:
+        sub = f"subtitles=filename='{_filter_path(ass)}'"
+        if scfg.get("fonts_dir"):
+            sub += f":fontsdir='{_filter_path(Path(scfg['fonts_dir']))}'"
+        graph += f"{src}{sub}[v];"
     audio_in = "".join(f"[0:{s.index}]" for s in streams.values())
     graph += f"{audio_in}amix=inputs={len(streams)}:normalize=0:dropout_transition=0[a]"
 
-    run(["ffmpeg", "-hide_banner", "-v", "error", "-y", "-ss", f"{start:.3f}", "-t", f"{dur:.3f}",
-         "-i", str(info.path), "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
-         "-c:v", cfg["render"]["codec"], *encoder_gpu(cfg["render"]["codec"], gpu), "-preset", "p5", "-rc", "vbr", "-cq", "20", "-b:v", "0",
+    inputs = ["-ss", f"{start:.3f}", "-t", f"{dur:.3f}", "-i", str(info.path)]
+    if caption_video:
+        inputs += ["-i", str(caption_video)]
+    run(["ffmpeg", "-hide_banner", "-v", "error", "-y", *inputs,
+         "-filter_complex", graph, "-map", "[v]", "-map", "[a]",
+         *encoder_options(cfg["render"]["codec"], 20, gpu, cfg["render"].get("video_bitrate")),
          "-pix_fmt", "yuv420p", "-r", "30", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(out)])
     return out
 

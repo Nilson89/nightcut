@@ -1,6 +1,7 @@
 from pathlib import Path
 
-from nightcut.media import AudioStream, MediaInfo
+from nightcut import media
+from nightcut.media import AudioStream, MediaInfo, encoder_options, resolve_encoder
 
 OBS = ["GAME", "MIC Main Headset", "MIC Tonor", "DESKTOP", "DISCORD, TS und TIPEESTREAM", "STREAM"]
 INFO = MediaInfo(Path("x.mkv"), 60.0, 2560, 1440, 60.0,
@@ -26,3 +27,31 @@ def test_title_list_and_whole_words_only():
 def test_falls_back_to_position():
     assert INFO.find_audio({"title": "PARTY", "index": 3}).title == "DESKTOP"
     assert INFO.find_audio(None) is None
+
+
+def test_encoder_options_are_codec_specific():
+    assert encoder_options("h264_nvenc", 18, 1) == [
+        "-c:v", "h264_nvenc", "-gpu", "1", "-preset", "p5", "-rc", "vbr", "-cq", "18", "-b:v", "0"]
+    assert encoder_options("libx264", 20) == ["-c:v", "libx264", "-preset", "medium", "-crf", "20"]
+    assert encoder_options("h264_videotoolbox", 20, bitrate="8M") == [
+        "-c:v", "h264_videotoolbox", "-b:v", "8M", "-allow_sw", "1", "-realtime", "0"]
+
+
+def test_auto_encoder_prefers_videotoolbox_on_macos(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "darwin")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_videotoolbox", "libx264"})
+    assert resolve_encoder("auto") == "h264_videotoolbox"
+
+
+def test_auto_encoder_falls_back_to_libx264(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "linux")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_nvenc", "libx264"})
+    monkeypatch.setattr(media, "nvidia_runtime_available", lambda: False)
+    assert resolve_encoder("auto") == "libx264"
+
+
+def test_auto_encoder_uses_nvenc_with_nvidia_runtime(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "linux")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_nvenc", "libx264"})
+    monkeypatch.setattr(media, "nvidia_runtime_available", lambda: True)
+    assert resolve_encoder("auto") == "h264_nvenc"

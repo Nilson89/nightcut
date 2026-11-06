@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .media import AudioStream, MediaInfo, crop_filter, encoder_gpu, run
+from .media import AudioStream, MediaInfo, crop_filter, encoder_options, run
 
 
 def render_clip(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStream], cfg: dict, out_dir: Path,
@@ -26,8 +26,8 @@ def render_clip(info: MediaInfo, clip: dict, n: int, streams: dict[str, AudioStr
     facecam = out_dir / f"{stem}_facecam.mp4" if separate_cam else None
 
     if not gameplay.exists() or (facecam and not facecam.exists()):
-        video_opts = ["-c:v", rcfg["codec"], *encoder_gpu(rcfg["codec"], gpu), "-preset", "p5", "-rc", "vbr",
-                      "-cq", str(rcfg["cq"]), "-b:v", "0", "-pix_fmt", "yuv420p", "-g", "60"]
+        video_opts = [*encoder_options(rcfg["codec"], int(rcfg["cq"]), gpu, rcfg.get("video_bitrate")),
+                      "-pix_fmt", "yuv420p", "-g", "60"]
         graph = f"[0:v]{crop_filter(cfg['layout']['gameplay'], info.width, info.height)}[g]"
         if facecam:
             graph += f";[0:v]{crop_filter(cfg['layout']['facecam'], info.width, info.height)}[f]"

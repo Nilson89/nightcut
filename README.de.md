@@ -9,11 +9,12 @@ Alles läuft auf deiner eigenen Grafikkarte, nichts wird hochgeladen.
 
 ## Was du brauchst
 
-- NVIDIA-Grafikkarte mit **16 GB VRAM** (z.B. RTX 5080, 5070 Ti, 5060 Ti 16 GB)
+- NVIDIA-Grafikkarte mit **16 GB VRAM** oder Apple-Silicon-Mac mit mindestens
+  **16 GB gemeinsamem Speicher** und macOS 14 oder neuer (getestet auf einem M1 Pro)
 - [ffmpeg](https://ffmpeg.org/) (muss im PATH liegen)
 - [Ollama](https://ollama.com/)
 - [uv](https://docs.astral.sh/uv/) – installiert Python und alle Pakete automatisch
-- Windows oder Linux
+- Windows, Linux oder Apple-Silicon-macOS
 
 ## Installation mit einem Klick (Windows)
 
@@ -28,6 +29,22 @@ auf dem Desktop liegt eine Verknüpfung. Für ein Update startest du `install.ba
 
 Den NVIDIA-Treiber installiert das Skript nicht, der muss schon aktuell sein.
 
+## Installation auf Apple Silicon macOS
+
+Lade `install-macos.sh` herunter und führe es im Terminal aus:
+
+```bash
+chmod +x install-macos.sh
+./install-macos.sh
+```
+
+Das Skript installiert bei Bedarf Homebrew und anschließend Git, ffmpeg, Ollama und uv. Danach
+klont es nightcut nach `~/nightcut`, richtet die Python-Umgebung ein und lädt beide Ollama-Modelle.
+Ein erneuter Lauf aktualisiert die Installation. Ollama und PyTorch verwenden Metal automatisch;
+FFmpeg rendert H.264 über VideoToolbox. Unterstützt werden derzeit M1-Macs und neuer mit
+macOS 14 oder neuer. Benötigt
+werden ungefähr 25 GB freier Speicher.
+
 ## Installation von Hand
 
 ```bash
@@ -35,7 +52,7 @@ Den NVIDIA-Treiber installiert das Skript nicht, der muss schon aktuell sein.
 git clone https://github.com/Nilson89/nightcut.git
 cd nightcut
 
-# 2. Python-Umgebung installieren (inkl. PyTorch mit CUDA)
+# 2. Python-Umgebung installieren (CUDA auf NVIDIA, Metal auf macOS)
 uv sync
 
 # 3. KI-Modelle für Ollama laden
@@ -47,6 +64,10 @@ uv run nightcut run "D:/Aufnahmen/session.mkv" --profile bf6
 ```
 
 Das Whisper-Modell für die Transkription wird beim ersten Lauf automatisch geladen.
+
+Unter macOS lässt du `render.codec: auto` in der Konfiguration stehen. nightcut wählt automatisch
+`h264_videotoolbox` und fällt bei Bedarf auf `libx264` zurück. Fehlt dem installierten FFmpeg der
+`subtitles`-Filter, verwendet der Shorts-Export automatisch einen portablen Caption-Fallback.
 
 **Windows, nightcut auf einem Netzlaufwerk (NAS):** `uv run` und `nightcut.exe` lösen ein verbundenes
 Laufwerk in den Pfad `\\server\freigabe` auf, und Windows kann dann die DLLs von NumPy/PyTorch nicht
@@ -134,6 +155,7 @@ Die wichtigsten Punkte:
 - `killfeed.player_names` – dein Name im Spiel. Dann liest nightcut alle paar Sekunden
   den Killfeed mit und findet auch Kills, bei denen du nicht laut geworden bist
   (das Spielprofil braucht dafür eine `killfeed_region`, bei `bf2042` ist sie drin).
+- `render.codec` – `auto` nutzt auf macOS VideoToolbox, auf NVIDIA-Systemen NVENC, sonst libx264
 
 ## Was am Morgen im Ausgabeordner liegt
 
@@ -212,10 +234,12 @@ einzelnen Schritt wiederholen: `--force vision` (oder `audio`, `transcript`,
 `candidates`, `edit`, `render`, `export`, `shorts`, `metadata`; im Let's-Play-Modus
 `audio`, `scan`, `transcript`, `cuts`, `episodes`, `export`, `metadata`).
 
-## Zwei Grafikkarten
+## Zwei NVIDIA-Grafikkarten
 
 Steckt eine zweite NVIDIA-Karte im PC (z.B. RTX 5080 + RTX 5060 Ti), nutzt nightcut im
 Highlight-Modus automatisch beide. Du musst nichts einstellen, der Befehl bleibt derselbe:
+
+Apple Silicon nutzt die integrierte GPU über Metal und ignoriert die NVIDIA-Multi-GPU-Einstellungen.
 
 ```bash
 uv run nightcut run "D:/Aufnahmen/session.mkv" --profile bf2042 --config config/local.yaml
