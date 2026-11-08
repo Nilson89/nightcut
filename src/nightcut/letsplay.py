@@ -14,7 +14,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import costs, episodes, export_xmeml, metadata, segments, signals, summary
+from . import costs, episodes, export_xmeml, metadata, segments, signals, summary, tracks
 from .media import extract_audio_tracks, keyframe_scan, load_pcm, probe
 from .pipeline import Run, console
 from .render import render_clip
@@ -29,19 +29,27 @@ class LetsPlayRun(Run):
         self.sources = sources
 
     def run(self) -> list[Path]:
+        infos = [probe(s) for s in self.sources]
+        self._resolve_layout(self.sources[0])  # one setup for the whole series: checked on the first recording
         cfg, lcfg = self.cfg, self.cfg["letsplay"]
         strength = lcfg["strengths"][lcfg["strength"]]
-        infos = [probe(s) for s in self.sources]
         offsets = list(np.cumsum([0.0] + [i.duration for i in infos[:-1]]))
         total_src = sum(i.duration for i in infos)
         streams, voice_streams = [], []
+        last_text = None
         for info in infos:
-            found = {name: info.find_audio(cfg["audio"].get(name)) for name in ("mic", "game", "party")}
-            if found["mic"] is None:
-                raise SystemExit(f"No mic track found in {info.path.name}. Check the 'audio' section of your config.")
-            streams.append({k: v for k, v in found.items() if v is not None})
+            chosen = tracks.pick_streams(info, cfg["audio"])
+            text = tracks.describe(chosen)
+            if text != last_text:  # print once for a series with the same tracks
+                console.print(f"  {info.path.name}: {text}")
+                last_text = text
+            found = tracks.streams_of(chosen)
+            if "mic" not in found:
+                raise SystemExit(f"{info.path.name} has no audio track. nightcut needs at least the mic.")
+            streams.append(found)
             # other voices (voice chat, an AI assistant only heard in the mix): no cuts while they talk
-            voices = {name: info.find_audio(cfg["audio"].get(name)) for name in lcfg.get("protect_voices") or []}
+            voices = {name: found.get(name) if name in found else info.find_audio(cfg["audio"].get(name))
+                      for name in lcfg.get("protect_voices") or []}
             voice_streams.append({k: v for k, v in voices.items() if v is not None and v.index != found["mic"].index})
         console.print(f"[bold]{len(infos)} recording(s)[/bold], {total_src / 3600:.2f} h in total, "
                       f"strength: {lcfg['strength']}, " + ("one episode per recording" if lcfg.get("episodes") == "per_recording"

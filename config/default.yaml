@@ -9,22 +9,31 @@ output_dir: ./output
 # letsplay:   keep everything, cut only dead air, split into episodes.
 mode: highlights
 
-# Source layout. Regions are fractions of the full recorded frame (0..1),
-# so they work for the original file and for downscaled copies alike.
-# The default matches a 2560x2520 canvas: gameplay 2560x1440 on top,
-# facecam 1920x1080 bottom left.
+# Source layout: where gameplay and facecam sit in the recording.
+# detect: auto  finds it at the start of every run (camera above, below or next to the gameplay
+#               on a bigger canvas, or burned into the gameplay picture). Result and a preview
+#               picture (layout.png) are in the output folder.
+# detect: off   uses the regions below. `nightcut layout recording.mkv --save config/local.yaml`
+#               writes them for you. If your config sets regions, detection is off automatically.
+# Regions are fractions of the full recorded frame (0..1), so they also fit downscaled copies.
+# The regions below match a 2560x2520 canvas: gameplay 2560x1440 on top, facecam 1920x1080 bottom left.
 layout:
+  detect: auto
   gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 0.571429 }
   facecam:  { x: 0.0, y: 0.571429, w: 0.75, h: 0.428571 }   # set to null if you record without facecam
   facecam_burned_in: false   # true if the cam is already part of the gameplay picture (see config/examples)
 
-# Audio streams, matched by their title (OBS track names). A title also matches the start of
-# a longer name ("MIC" finds "MIC Main Headset"), and several names can be given as a list.
-# Falls back to the given stream position (0-based, audio streams only) if no title matches.
+# Audio streams. Usually nothing to set: nightcut finds the tracks by themselves.
+# 1. by the title given here (OBS track names). A title also matches the start of a longer name
+#    ("MIC" finds "MIC Main Headset"), and several names can be given as a list.
+# 2. by a fixed position, if you set one (0-based, audio streams only): index: 2
+# 3. by common names: Mikrofon, Mic, Voice, Stimme, Headset / Game, Spiel, Desktop / Discord, TeamSpeak, Chat
+# 4. the mic by its sound: the track that is nearly quiet between the words (game and mix never are).
+#    One track only: it is used as a mix. The log shows which track was taken and why.
 audio:
-  mic:   { title: MIC,   index: 1 }
-  game:  { title: GAME,  index: 2 }
-  party: { title: [PARTY, DISCORD, TEAMSPEAK], index: 3 }    # voice chat; set to null if unused
+  mic:   { title: MIC,   index: auto }
+  game:  { title: GAME,  index: auto }
+  party: { title: [PARTY, DISCORD, TEAMSPEAK], index: auto }    # voice chat; set to null if unused
   mix:   null    # full mix, e.g. { title: null, index: 0 }; only needed when a voice is heard nowhere else (AI assistant, TTS)
   sample_rate: 16000
 

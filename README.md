@@ -97,13 +97,29 @@ Properties*, for example:
 | 3 | Game | `GAME` |
 | 4 | Discord / party chat | `PARTY` |
 
-If your facecam is part of the recorded canvas (e.g. gameplay on top, camera below),
-describe both regions in the `layout` section of your config. nightcut cuts them into
-separate files, so you can place the camera freely in your editor.
+**Tracks named differently, or not at all?** nightcut finds them itself:
+1. by the names in the config (`MIC`, `GAME`, `PARTY` …; "MIC" also finds "MIC Main Headset"),
+2. by common names: *Mic, Microphone, Voice, Headset, Mikrofon, Stimme* for the mic,
+   *Game, Spiel, Desktop* for the game, *Discord, TeamSpeak, Voice Chat, Chat* for voice chat,
+3. **by sound** when tracks are just "Track1", "Track2" …: the mic is the track that is nearly quiet
+   between the words; game audio and a full mix never are,
+4. with a **single** track, it is used as a full mix.
+
+Every run prints which track was taken and why, e.g.
+`Audio: mic = track 3 'Track3' (by its sound, level range 39 dB)`. If that is ever wrong, set it in
+`config/local.yaml` (position counted from 0, audio tracks only): `audio: { mic: { title: null, index: 2 } }`.
+
+**Facecam?** Also found at the start of every run (`layout.detect: auto`): camera above, below or
+**next to** the gameplay on a shared canvas, or burned into the game picture. Canvas regions are cut
+into separate files, so you can place the camera freely in your editor.
 
 ## Where is your facecam? `nightcut layout`
 
-No need to measure anything. Run this once in the nightcut folder with one of your recordings:
+Usually nothing to do: with `layout.detect: auto` (default) every run finds gameplay and camera, prints
+the result and writes a preview `layout.png` (green: gameplay, orange: camera) into the output folder.
+
+To check it once and keep it fixed (saves a few seconds per run, and the vision model for burned-in
+cams), run this in the nightcut folder with one of your recordings:
 
 ```bash
 uv run nightcut layout "D:/Recordings/session.mkv" --save config/local.yaml
@@ -111,6 +127,7 @@ uv run nightcut layout "D:/Recordings/session.mkv" --save config/local.yaml
 
 nightcut looks at 8 frames spread over the recording. A **canvas layout** (gameplay and camera
 side by side or stacked) is found without AI: whatever stays black in every frame is empty space.
+If both pictures have the same size, the one that changes more is the gameplay.
 A **camera burned into the game picture** (also with the background removed) is found by the
 vision model on each frame, and the boxes are combined into one region you can move around in.
 
@@ -126,6 +143,7 @@ uv run nightcut run "D:/Recordings/session.mkv" --profile bf6 --config config/lo
 ```yaml
 # found by nightcut layout: session.mkv (2026-11-03)
 layout:
+  detect: off
   gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
   facecam:  { x: 0.79, y: 0.76, w: 0.21, h: 0.24 }   # fractions: x/y top left corner, w/h size
   facecam_burned_in: true
@@ -133,15 +151,16 @@ layout:
 
 Without `--save` the block is only printed; copy it into `config/local.yaml` yourself. If the box is
 off, edit the numbers or try a recording where you are clearly visible. `facecam: null` means no
-camera was found. You only need to do this again when you change your OBS scene.
+camera was found. You only need to do this again when you change your OBS scene. Regions set in your
+config always win; automatic detection is then off.
 
 ## Configuration
 
 Copy `config/default.yaml` to `config/local.yaml`, change what you need and pass it
 with `--config config/local.yaml`. The most important settings:
 
-- `layout`: where gameplay and facecam are in your recording (fractions of the frame; `nightcut layout` finds them)
-- `audio`: track names of mic, game and voice chat
+- `layout`: where gameplay and facecam are in your recording (default: found automatically; fix it with `nightcut layout`)
+- `audio`: mic, game and voice chat tracks (default: found automatically, see "Recording setup")
 - `editor.target_minutes`: length of the final video
 - `vision.model`, `editor.model`: which Ollama models to use
 - `render.codec`: `auto` selects VideoToolbox on macOS, NVENC on NVIDIA systems, otherwise libx264
@@ -216,10 +235,10 @@ The episode timelines point at your original recordings. A cut is only an in/out
 so you can pull any removed part back in the editor. Recordings with a stacked layout
 (separate facecam area) are rendered into clean files instead.
 
-**Facecam burned into the picture, one mixed audio track?** Copy
-`config/examples/burned-in-cam.yaml` to `config/local.yaml` and let
-`nightcut layout <recording> --save config/local.yaml` set where your cam sits, so the moving cam
-does not hide a frozen game picture. (Don't edit the example itself, or updating via `install.bat` fails.)
+**Facecam burned into the picture, one mixed audio track?** Found automatically: the cam area is
+left out of the motion check (so a moving cam does not hide a frozen game picture) and the single
+track is used as a full mix. With several recordings the layout is checked on the first one, so record
+a series with the same OBS scene.
 
 ## Two NVIDIA GPUs
 

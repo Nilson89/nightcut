@@ -43,6 +43,10 @@ def resolve_profile(profile: str) -> Path:
 def load_config(user_config: Path | None = None, profile: str | None = None) -> dict[str, Any]:
     cfg = _read_yaml(DEFAULT_CONFIG)
     if user_config:
-        cfg = _deep_merge(cfg, _read_yaml(user_config))
+        user = _read_yaml(user_config)
+        lay = user.get("layout")
+        if isinstance(lay, dict) and ("gameplay" in lay or "facecam" in lay) and "detect" not in lay:
+            user = {**user, "layout": {**lay, "detect": "off"}}  # your own regions win over auto detection
+        cfg = _deep_merge(cfg, user)
     cfg["profile"] = _read_yaml(resolve_profile(profile)) if profile else {"name": "generic", "keywords": {}, "vision_hints": ""}
     return cfg

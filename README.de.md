@@ -88,16 +88,37 @@ Am besten funktioniert nightcut mit **getrennten Audiospuren**. In OBS unter
 | 3 | Spiel | GAME |
 | 4 | Discord / Party | PARTY |
 
-**Facecam im Bild?** Wenn du Gameplay und Kamera auf einer gemeinsamen Leinwand
-aufnimmst (z.B. Gameplay oben, Kamera unten), trägst du die beiden Bereiche unter
-`layout` in deiner Config ein. nightcut schneidet sie als getrennte Dateien aus, und du
-kannst die Kamera im Schnittprogramm frei platzieren. Wo genau die Bereiche liegen,
-ermittelt `nightcut layout` für dich (nächster Abschnitt).
+**Deine Spuren heißen anders oder gar nicht?** Kein Problem, nightcut sucht selbst:
+1. nach den Namen aus der Config (`MIC`, `GAME`, `PARTY` …; „MIC“ findet auch „MIC Main Headset“),
+2. nach üblichen Namen: *Mikrofon, Mikro, Mic, Voice, Stimme, Headset* fürs Mikro,
+   *Game, Spiel, Desktop* fürs Spiel, *Discord, TeamSpeak, Voice Chat, Chat* für den Voice-Chat,
+3. **am Klang**, wenn die Spuren nur „Track1“, „Track2“ … heißen: Das Mikro ist die Spur, die zwischen
+   den Wörtern fast still ist. Spiel und Gesamtmix sind das nie.
+4. Hat die Aufnahme nur **eine** Tonspur, nimmt nightcut sie als Gesamtmix.
+
+Zu Beginn jedes Laufs steht im Fenster, welche Spur genommen wurde und warum, z.B.
+`Audio: mic = track 3 'Track3' (by its sound, level range 39 dB)`. Stimmt das mal nicht, legst du die
+Spur in `config/local.yaml` fest (Position ab 0 gezählt, nur Tonspuren):
+
+```yaml
+audio:
+  mic: { title: null, index: 2 }   # dritte Tonspur
+```
+
+**Facecam im Bild?** Auch das erkennt nightcut zu Beginn jedes Laufs selbst (`layout.detect: auto`,
+siehe nächster Abschnitt): Kamera über, unter oder **neben** dem Gameplay auf einer gemeinsamen
+Leinwand, oder fest ins Spielbild eingebaut. Bei einer Leinwand schneidet nightcut beide Bereiche
+als getrennte Dateien aus, und du kannst die Kamera im Schnittprogramm frei platzieren.
 
 ## Wo sitzt deine Facecam? `nightcut layout`
 
-nightcut muss wissen, wo in deiner Aufnahme das Gameplay und wo deine Kamera liegt. Das musst du
-nicht ausmessen. Öffne die Eingabeaufforderung im nightcut-Ordner und gib eine deiner Aufnahmen an:
+Normalerweise musst du nichts tun: Mit `layout.detect: auto` (Standard) prüft nightcut am Anfang jedes
+Laufs, wo Gameplay und Kamera liegen, schreibt das Ergebnis ins Fenster und legt ein Vorschaubild
+`layout.png` in den Ausgabeordner (grün = Gameplay, orange = Kamera).
+
+Willst du das Layout einmal prüfen und fest eintragen (spart pro Lauf ein paar Sekunden und das
+Bildmodell bei eingebauter Cam), öffne die Eingabeaufforderung im nightcut-Ordner und gib eine deiner
+Aufnahmen an:
 
 ```bash
 uv run nightcut layout "D:/Aufnahmen/session.mkv" --save config/local.yaml
@@ -106,7 +127,8 @@ uv run nightcut layout "D:/Aufnahmen/session.mkv" --save config/local.yaml
 Das passiert:
 1. nightcut schaut sich 8 Bilder aus der Aufnahme an (verteilt über die ganze Länge).
 2. **Gameplay und Kamera nebeneinander oder untereinander** (eine große Leinwand): Die Bereiche
-   werden ohne KI erkannt. Was in allen Bildern schwarz bleibt, ist leere Fläche.
+   werden ohne KI erkannt. Was in allen Bildern schwarz bleibt, ist leere Fläche. Sind beide Bilder
+   gleich groß, ist das Gameplay das Bild, das sich mehr verändert.
 3. **Kamera fest im Spielbild** (auch freigestellt ohne Hintergrund): Das Bildmodell sucht dich auf
    jedem der 8 Bilder, nightcut nimmt daraus einen Bereich, in dem du dich bewegen kannst.
 4. Du bekommst den fertigen `layout`-Block angezeigt und ein Vorschaubild `layout_<aufnahme>.png`
@@ -127,10 +149,13 @@ x/y = linke obere Ecke, w/h = Breite und Höhe):
 ```yaml
 # found by nightcut layout: session.mkv (2026-11-03)
 layout:
+  detect: off
   gameplay: { x: 0.0, y: 0.0, w: 1.0, h: 1.0 }
   facecam:  { x: 0.79, y: 0.76, w: 0.21, h: 0.24 }
   facecam_burned_in: true
 ```
+
+Stehen in deiner Config eigene Bereiche, nimmt nightcut immer diese, die automatische Erkennung ist dann aus.
 
 - **Ohne `--save`** zeigt nightcut den Block nur an. Dann kopierst du ihn selbst in `config/local.yaml`
   (einen vorhandenen `layout`-Block vorher löschen).
@@ -148,8 +173,8 @@ uv run nightcut run aufnahme.mkv --config config/local.yaml --profile bf6
 ```
 
 Die wichtigsten Punkte:
-- `layout` – wo Gameplay und Facecam in deiner Aufnahme liegen (Anteile von 0 bis 1, ermittelt `nightcut layout`)
-- `audio` – Namen deiner Audiospuren
+- `layout` – wo Gameplay und Facecam in deiner Aufnahme liegen (Standard: automatisch, fest eintragen mit `nightcut layout`)
+- `audio` – deine Audiospuren (Standard: automatisch, siehe „OBS richtig einstellen“)
 - `editor.target_minutes` – gewünschte Videolänge
 - `transcribe.language` – Sprache deines Kommentars
 - `killfeed.player_names` – dein Name im Spiel. Dann liest nightcut alle paar Sekunden
@@ -217,10 +242,10 @@ Schnittstärke (`--strength`):
 Die Timelines zeigen direkt auf deine Original-Aufnahmen. Ein Schnitt ist nur ein Ein-
 und Ausstiegspunkt: Gefällt dir einer nicht, ziehst du den Clip in DaVinci einfach wieder auf.
 
-**Facecam fest im Bild und nur eine Tonspur?** Kopiere `config/examples/burned-in-cam.yaml` nach
-`config/local.yaml` und lass `nightcut layout <aufnahme> --save config/local.yaml` eintragen, wo deine
-Cam sitzt. (Die Beispieldatei selbst nicht ändern, sonst klappt das Update per `install.bat` nicht.) Sonst hält nightcut ein stehendes Spielbild wegen der
-bewegten Cam für „Bewegung“.
+**Facecam fest im Bild und nur eine Tonspur?** Das erkennt nightcut jetzt selbst: Die Cam-Fläche wird
+bei der Bewegungsprüfung ausgeblendet (sonst hielte nightcut ein stehendes Spielbild wegen der bewegten
+Cam für „Bewegung“), und die einzige Tonspur gilt als Gesamtmix. Bei mehreren Aufnahmen prüft nightcut
+das Layout an der ersten; alle Folgen einer Serie sollten also mit derselben OBS-Szene aufgenommen sein.
 
 **Ruhige Session?** Hat eine Aufnahme zu wenige starke Momente, fragt nightcut beim Start, ob
 mit ruhigen Stellen bis zur Ziellänge aufgefüllt werden soll oder das Video lieber kürzer wird.

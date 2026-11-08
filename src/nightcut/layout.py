@@ -66,15 +66,65 @@ def _bands(mask: np.ndarray, tol: float = 0.02, min_size: float = 0.01) -> list[
     return [(b[0], b[2], b[1], b[3]) for b in merged if b[0] is not None]
 
 
+def _ratio_error(rects: list[tuple[int, int, int, int]]) -> float:
+    """How far the rectangles are from 16:9 (0 = all exactly 16:9)."""
+    return sum(abs(np.log(max(x1 - x0, 1) / max(y1 - y0, 1) / (16 / 9))) for x0, y0, x1, y1 in rects)
+
+
+def split_twins(rects: list[tuple[int, int, int, int]], tol: float = 0.04) -> list[tuple[int, int, int, int]]:
+    """Gameplay and camera both 16:9 and touching without a gap (e.g. 3840x1080 side by side,
+    or 1920x2160 stacked) look like one wide or tall area. Split such an area in two."""
+    out = []
+    for x0, y0, x1, y1 in rects:
+        ratio = (x1 - x0) / max(y1 - y0, 1)
+        if abs(ratio / (32 / 9) - 1) <= tol:
+            mid = (x0 + x1) // 2
+            out += [(x0, y0, mid, y1), (mid, y0, x1, y1)]
+        elif abs(ratio / (8 / 9) - 1) <= tol:
+            mid = (y0 + y1) // 2
+            out += [(x0, y0, x1, mid), (x0, mid, x1, y1)]
+        else:
+            out.append((x0, y0, x1, y1))
+    return out
+
+
 def content_rects(mask: np.ndarray) -> list[dict]:
-    """Rectangles of content as fractions, largest first. Tries rows and columns, keeps the simpler split."""
+    """Rectangles of content as fractions, largest first.
+
+    Tries a split into rows (camera above/below the gameplay) and into columns (camera next to it)
+    and keeps the simpler one. With the same number of areas, the one closer to 16:9 wins: for a
+    camera at the top right of a side-by-side canvas both splits find two areas, but only the
+    column split gives two 16:9 pictures."""
     h, w = mask.shape
-    by_rows = _bands(mask)
-    by_cols = [(y0, x0, y1, x1) for (x0, y0, x1, y1) in _bands(mask.T)]
-    rects = min(by_rows, by_cols, key=len) if by_rows and by_cols else (by_rows or by_cols)
+    by_rows = split_twins(_bands(mask))
+    by_cols = split_twins([(y0, x0, y1, x1) for (x0, y0, x1, y1) in _bands(mask.T)])
+    options = [r for r in (by_rows, by_cols) if r]
+    rects = min(options, key=lambda r: (len(r), _ratio_error(r))) if options else []
     out = [{"x": x0 / w, "y": y0 / h, "w": (x1 - x0) / w, "h": (y1 - y0) / h} for x0, y0, x1, y1 in rects]
     out = [r for r in out if r["w"] * r["h"] >= 0.02]
     return sorted(out, key=lambda r: r["w"] * r["h"], reverse=True)
+
+
+def motion(frames: np.ndarray, region: dict) -> float:
+    """Mean change between the sampled frames inside a region. Gameplay changes a lot from one
+    sample to the next (minutes apart); a webcam keeps showing the same room."""
+    n, h, w = frames.shape
+    y0 = int(region["y"] * h)
+    x0 = int(region["x"] * w)
+    y1 = max(int((region["y"] + region["h"]) * h), y0 + 1)
+    x1 = max(int((region["x"] + region["w"]) * w), x0 + 1)
+    return float(np.abs(np.diff(frames[:, y0:y1, x0:x1], axis=0)).mean()) if n > 1 else 0.0
+
+
+def gameplay_first(rects: list[dict], frames: np.ndarray, size_ratio: float = 1.5) -> list[dict]:
+    """The bigger area is the gameplay. If the two biggest are about the same size, the one that
+    changes more between the samples is the gameplay."""
+    if len(rects) < 2:
+        return rects
+    a, b = rects[0], rects[1]
+    if a["w"] * a["h"] < size_ratio * b["w"] * b["h"] and motion(frames, b) > motion(frames, a):
+        return [b, a, *rects[2:]]
+    return rects
 
 
 def snap_16_9(rects: list[dict], width: int, height: int, tol: float = 0.015) -> list[dict]:
@@ -153,9 +203,35 @@ def _fmt(region: dict | None) -> str:
     return "{ " + ", ".join(f"{k}: {round(region[k], 4)}" for k in ("x", "y", "w", "h")) + " }"
 
 
+def _where(region: dict) -> str:
+    cx, cy = region["x"] + region["w"] / 2, region["y"] + region["h"] / 2
+    v = "top" if cy < 0.4 else "bottom" if cy > 0.6 else ""
+    h = "left" if cx < 0.4 else "right" if cx > 0.6 else ""
+    return f"{v} {h}".strip() or "middle"
+
+
+def describe(found: dict) -> str:
+    """One line for the log: what kind of layout and where the camera is."""
+    cam, game = found.get("facecam"), found.get("gameplay")
+    if found.get("kind") == "canvas" and cam and game:
+        if cam["x"] >= game["x"] + game["w"] - 0.01 or cam["x"] + cam["w"] <= game["x"] + 0.01:
+            side = "next to"
+        elif cam["y"] >= game["y"] + game["h"] - 0.01:
+            side = "below"
+        elif cam["y"] + cam["h"] <= game["y"] + 0.01:
+            side = "above"
+        else:
+            side = "beside"
+        return f"Layout: canvas, facecam {side} the gameplay ({_where(cam)}) {_fmt(cam)}."
+    if cam:
+        return f"Layout: facecam inside the gameplay picture ({_where(cam)}) {_fmt(cam)}."
+    return "Layout: no facecam, gameplay is the whole picture."
+
+
 def to_yaml(layout: dict, source: str = "") -> str:
     head = f"# found by nightcut layout{': ' + source if source else ''} ({date.today().isoformat()})\n"
     return (head + "layout:\n"
+            "  detect: off\n"
             f"  gameplay: {_fmt(layout['gameplay'])}\n"
             f"  facecam:  {_fmt(layout['facecam'])}\n"
             f"  facecam_burned_in: {'true' if layout['facecam_burned_in'] else 'false'}\n")
@@ -208,7 +284,8 @@ def detect(src: Path, cfg: dict, n_frames: int = 8, log=print) -> dict:
     sh = max(2, round(sw * info.height / info.width / 2) * 2)
     log(f"{src.name}: {info.width}x{info.height}, {info.duration / 60:.0f} min, checking {len(times)} frames ...")
 
-    rects = snap_16_9(content_rects(content_mask(_gray_frames(src, times, sw, sh))), info.width, info.height)
+    frames = _gray_frames(src, times, sw, sh)
+    rects = gameplay_first(snap_16_9(content_rects(content_mask(frames)), info.width, info.height), frames)
     if len(rects) >= 2:
         log("Canvas layout: gameplay and camera are separate areas.")
         return {"gameplay": rects[0], "facecam": rects[1], "facecam_burned_in": False,

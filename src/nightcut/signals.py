@@ -26,6 +26,9 @@ def envelope_db(pcm: np.ndarray, sample_rate: int, chunk_frames: int = 20000) ->
 
 
 def moving_average(x: np.ndarray, window: int) -> np.ndarray:
+    # np.convolve(mode="same") returns max(len(x), window) values: for a recording shorter than the
+    # window (a 30 s clip against a 60 s baseline) the result would not fit the signal any more.
+    window = min(window, len(x))
     if window <= 1:
         return x.astype(np.float32)
     kernel = np.ones(window, dtype=np.float32) / window

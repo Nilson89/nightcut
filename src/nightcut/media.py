@@ -50,8 +50,8 @@ class MediaInfo:
             for stream in self.audio:
                 if re.match(re.escape(t) + r"\b", stream.title.lower()):
                     return stream
-        pos = spec.get("index")
-        if pos is not None and 0 <= pos < len(self.audio):
+        pos = spec.get("index")  # a number, or "auto"/None (then see tracks.pick_streams)
+        if isinstance(pos, int) and not isinstance(pos, bool) and 0 <= pos < len(self.audio):
             return self.audio[pos]
         return None
 

@@ -18,7 +18,8 @@ import numpy as np
 from rich.console import Console
 
 from . import gpus  # first: sets CUDA_DEVICE_ORDER before PyTorch is loaded
-from . import costs, editor, export_xmeml, killfeed, metadata, shorts, signals, summary, thumbnails, vision
+from . import costs, editor, export_xmeml, killfeed, metadata, shorts, signals, summary, thumbnails, tracks, vision
+from . import layout as layout_detect
 from .media import extract_audio_tracks, load_pcm, probe
 from .render import render_clip
 from .transcribe import free_vram, load_asr, transcribe_regions
@@ -260,13 +261,41 @@ class Run:
         with self._gpus():
             return self._run()
 
+    def _resolve_layout(self, source: Path) -> None:
+        """`layout.detect: auto`: find gameplay and facecam in the recording (once per run, cached).
+        A layout from your config (`detect: off`, or regions set in it) is used as it is."""
+        lay = self.cfg["layout"]
+        if str(lay.get("detect", "off")).lower() != "auto":
+            return
+        cache = self.work / "cache" / "layout.json"
+        if cache.exists() and "layout" not in self.force:
+            found = json.loads(cache.read_text(encoding="utf-8"))
+            console.print(f"[dim]✓ layout (cached): {found['kind']}[/dim]")
+        else:
+            console.print("Finding gameplay and facecam (layout.detect: auto) ...")
+            try:
+                result = layout_detect.detect(source, self.cfg, log=lambda t: console.print(f"  {t}"))
+            except Exception as exc:  # noqa: BLE001 - a run must not fail on the layout check
+                console.print(f"  [yellow]Layout check failed ({exc}); using the whole picture as gameplay.[/yellow]")
+                result = {"gameplay": layout_detect.FULL, "facecam": None, "facecam_burned_in": False,
+                          "kind": "no_cam"}
+            found = {k: result[k] for k in ("gameplay", "facecam", "facecam_burned_in", "kind")}
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(json.dumps(found, indent=2), encoding="utf-8")
+            if "times" in result:
+                with contextlib.suppress(Exception):
+                    layout_detect.draw_preview(source, result, self.work / "layout.png")
+            console.print("  " + layout_detect.describe(found) + f"  Check: {self.work / 'layout.png'}")
+        self.cfg = {**self.cfg, "layout": {**lay, **{k: found[k] for k in ("gameplay", "facecam", "facecam_burned_in")}}}
+        self.log["layout"] = found
+
     def _run(self) -> Path:
-        cfg = self.cfg
         info = probe(self.source)
-        streams = {name: info.find_audio(cfg["audio"].get(name)) for name in ("mic", "game", "party")}
-        streams = {k: v for k, v in streams.items() if v is not None}
+        self._resolve_layout(self.source)
+        cfg = self.cfg
+        streams = tracks.streams_of(tracks.pick_streams(info, cfg["audio"], log=lambda t: console.print(f"  {t}")))
         if "mic" not in streams:
-            raise SystemExit("No mic track found. Check the 'audio' section of your config.")
+            raise SystemExit(f"{self.source.name} has no audio track. nightcut needs at least the mic.")
         console.print(f"[bold]{self.source.name}[/bold]: {info.duration / 3600:.2f} h, {info.width}x{info.height} "
                        f"@ {info.fps:.0f} fps, audio: {', '.join(f'{k}={v.title}' for k, v in streams.items())}")
         sr = cfg["audio"]["sample_rate"]

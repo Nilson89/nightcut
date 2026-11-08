@@ -49,3 +49,12 @@ def test_too_few_peaks_go_below_the_percentile_but_not_below_the_median():
            "snap_to_speech_s": 4, "min_score_percentile": 99.9}
     assert len(signals.pick_candidates(score, [], cfg, 600.0)) == 1
     assert len(signals.pick_candidates(score, [], {**cfg, "min_count": 8}, 600.0)) == 5   # median 0.2 is the floor
+
+
+def test_short_recording_below_baseline_window():
+    """A 30 s clip against the 60 s baseline used to fail: operands could not be broadcast (119,) (240,)."""
+    from nightcut.signals import moving_average, spike_score
+    db = np.random.default_rng(0).uniform(-60, -20, 119).astype(np.float32)
+    assert spike_score(db).shape == (119,)
+    assert moving_average(db, 240).shape == (119,)
+    assert moving_average(np.zeros(0, np.float32), 10).shape == (0,)
