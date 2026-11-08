@@ -92,13 +92,29 @@ Am besten funktioniert nightcut mit **getrennten Audiospuren**. In OBS unter
 1. nach den Namen aus der Config (`MIC`, `GAME`, `PARTY` …; „MIC“ findet auch „MIC Main Headset“),
 2. nach üblichen Namen: *Mikrofon, Mikro, Mic, Voice, Stimme, Headset* fürs Mikro,
    *Game, Spiel, Desktop* fürs Spiel, *Discord, TeamSpeak, Voice Chat, Chat* für den Voice-Chat,
-3. **am Klang**, wenn die Spuren nur „Track1“, „Track2“ … heißen: Das Mikro ist die Spur, die zwischen
-   den Wörtern fast still ist. Spiel und Gesamtmix sind das nie.
-4. Hat die Aufnahme nur **eine** Tonspur, nimmt nightcut sie als Gesamtmix.
+3. **am Pegel**, wenn die Spuren nur „Track1“, „Track2“ … heißen: Das Mikro ist laut, solange du
+   sprichst, und dazwischen fast still. Spiel und Gesamtmix laufen dagegen durch. Genommen wird das
+   nur, wenn eine Spur klar vorne liegt.
+4. **Unsicher?** Dann hört Whisper in kurze Stücke der fraglichen Spuren hinein und schaut, wo wirklich
+   gesprochen wird. So wird auch das Mikro gefunden, wenn du wenig redest oder ein Noise-Gate es
+   meist stumm schaltet.
+5. **Immer noch unsicher?** nightcut legt von jeder fraglichen Spur ein 10-Sekunden-Stück ab
+   (`track1.m4a`, `track2.m4a` …), du hörst rein und tippst die Nummer der Datei mit deiner Stimme
+   (`o` öffnet den Ordner). Die Antwort merkt sich nightcut in `config/known_tracks.yaml` für alle
+   Aufnahmen mit denselben Spuren. Die Frage kommt beim Start, nicht mitten in der Nacht. Läuft
+   nightcut ohne Fenster (z.B. geplant über Hermes), nimmt es seinen besten Tipp und sagt das im Log.
+6. Hat die Aufnahme nur **eine** Tonspur, nimmt nightcut sie als Gesamtmix.
 
 Zu Beginn jedes Laufs steht im Fenster, welche Spur genommen wurde und warum, z.B.
-`Audio: mic = track 3 'Track3' (by its sound, level range 39 dB)`. Stimmt das mal nicht, legst du die
-Spur in `config/local.yaml` fest (Position ab 0 gezählt, nur Tonspuren):
+`Audio: mic = track 3 'Track3' (by its level, level range 39 dB)`. Stimmt das mal nicht, sag es nightcut
+einmal mit:
+
+```bash
+uv run nightcut tracks "D:/Aufnahmen/session.mkv"
+```
+
+Das zeigt alle Spuren mit ihren Messwerten, legt die Hörproben ab und fragt dich. Alternativ legst du
+die Spur in `config/local.yaml` fest (Position ab 0 gezählt, nur Tonspuren):
 
 ```yaml
 audio:

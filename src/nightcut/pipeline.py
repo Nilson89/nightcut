@@ -289,11 +289,28 @@ class Run:
         self.cfg = {**self.cfg, "layout": {**lay, **{k: found[k] for k in ("gameplay", "facecam", "facecam_burned_in")}}}
         self.log["layout"] = found
 
+    def _pick_tracks(self, info, folder: Path) -> tuple[dict, str]:
+        """Mic, game and party streams. Chosen once per run and kept in the cache, so a resumed
+        run neither asks again nor decides differently. Returns (streams, description)."""
+        cache = folder / "tracks.json"
+        if cache.exists() and "audio" not in self.force:
+            saved = json.loads(cache.read_text(encoding="utf-8"))
+            streams = {k: info.audio[p] for k, p in saved["positions"].items() if p < len(info.audio)}
+            console.print(f"  [dim]{saved['text']} (cached)[/dim]")
+            return streams, saved["text"]
+        chosen = tracks.pick_streams(info, self.cfg, log=lambda t: console.print(f"  {t}"), folder=folder / "listen")
+        text = tracks.describe(chosen)
+        streams = tracks.streams_of(chosen)
+        folder.mkdir(parents=True, exist_ok=True)
+        cache.write_text(json.dumps({"positions": {k: s.position for k, s in streams.items()}, "text": text},
+                                    indent=2, ensure_ascii=False), encoding="utf-8")
+        return streams, text
+
     def _run(self) -> Path:
         info = probe(self.source)
         self._resolve_layout(self.source)
         cfg = self.cfg
-        streams = tracks.streams_of(tracks.pick_streams(info, cfg["audio"], log=lambda t: console.print(f"  {t}")))
+        streams, _ = self._pick_tracks(info, self.work / "cache")
         if "mic" not in streams:
             raise SystemExit(f"{self.source.name} has no audio track. nightcut needs at least the mic.")
         console.print(f"[bold]{self.source.name}[/bold]: {info.duration / 3600:.2f} h, {info.width}x{info.height} "

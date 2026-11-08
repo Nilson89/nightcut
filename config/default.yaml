@@ -28,8 +28,11 @@ layout:
 #    ("MIC" finds "MIC Main Headset"), and several names can be given as a list.
 # 2. by a fixed position, if you set one (0-based, audio streams only): index: 2
 # 3. by common names: Mikrofon, Mic, Voice, Stimme, Headset / Game, Spiel, Desktop / Discord, TeamSpeak, Chat
-# 4. the mic by its sound: the track that is nearly quiet between the words (game and mix never are).
-#    One track only: it is used as a mix. The log shows which track was taken and why.
+# 4. the mic by its level: loud while you talk, nearly quiet in between (game and mix keep going).
+#    Unsure: Whisper checks where someone really talks. Still unsure: you get a 10 s piece of every
+#    candidate track to listen to and type which one is your voice (remembered in config/known_tracks.yaml;
+#    ask again with: nightcut tracks <recording>). One track only: it is used as a mix.
+#    The log shows which track was taken and why.
 audio:
   mic:   { title: MIC,   index: auto }
   game:  { title: GAME,  index: auto }

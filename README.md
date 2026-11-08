@@ -101,13 +101,22 @@ Properties*, for example:
 1. by the names in the config (`MIC`, `GAME`, `PARTY` …; "MIC" also finds "MIC Main Headset"),
 2. by common names: *Mic, Microphone, Voice, Headset, Mikrofon, Stimme* for the mic,
    *Game, Spiel, Desktop* for the game, *Discord, TeamSpeak, Voice Chat, Chat* for voice chat,
-3. **by sound** when tracks are just "Track1", "Track2" …: the mic is the track that is nearly quiet
-   between the words; game audio and a full mix never are,
-4. with a **single** track, it is used as a full mix.
+3. **by level** when tracks are just "Track1", "Track2" …: the mic is loud while you talk and nearly
+   quiet in between; game audio and a full mix keep going. Only taken when one track is clearly ahead,
+4. **unsure?** Whisper listens to short samples of the candidate tracks and finds where someone
+   really talks. This also finds the mic when you talk little or a noise gate keeps it silent,
+5. **still unsure?** nightcut writes a 10-second piece of each candidate (`track1.m4a`, `track2.m4a` …),
+   you listen and type the number of the file with your voice (`o` opens the folder). The answer is
+   remembered in `config/known_tracks.yaml` for all recordings with the same tracks. The question
+   comes at start, not in the middle of the night; without a terminal (scheduled runs) nightcut takes
+   its best guess and says so in the log,
+6. with a **single** track, it is used as a full mix.
 
 Every run prints which track was taken and why, e.g.
-`Audio: mic = track 3 'Track3' (by its sound, level range 39 dB)`. If that is ever wrong, set it in
-`config/local.yaml` (position counted from 0, audio tracks only): `audio: { mic: { title: null, index: 2 } }`.
+`Audio: mic = track 3 'Track3' (by its level, level range 39 dB)`. If that is ever wrong, run
+`nightcut tracks <recording>` once: it lists all tracks with their levels, writes the listening pieces
+and asks you. Or set it in `config/local.yaml` (position counted from 0, audio tracks only):
+`audio: { mic: { title: null, index: 2 } }`.
 
 **Facecam?** Also found at the start of every run (`layout.detect: auto`): camera above, below or
 **next to** the gameplay on a shared canvas, or burned into the game picture. Canvas regions are cut
@@ -283,6 +292,7 @@ nightcut run <recording> [<recording> ...] [--mode highlights|letsplay] [--profi
              [--config my.yaml] [--output dir] [--name folder] [--strength gentle|normal|tight]
              [--no-vision] [--no-llm] [--fill|--no-fill] [--gpus auto|1|2] [--force <stage>]
 nightcut layout <recording> [--save config/local.yaml]
+nightcut tracks <recording> [--config my.yaml]
 nightcut summary <output folder> [...]
 nightcut profiles
 ```

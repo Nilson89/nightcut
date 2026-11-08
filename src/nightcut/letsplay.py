@@ -36,14 +36,15 @@ class LetsPlayRun(Run):
         offsets = list(np.cumsum([0.0] + [i.duration for i in infos[:-1]]))
         total_src = sum(i.duration for i in infos)
         streams, voice_streams = [], []
-        last_text = None
-        for info in infos:
-            chosen = tracks.pick_streams(info, cfg["audio"])
-            text = tracks.describe(chosen)
-            if text != last_text:  # print once for a series with the same tracks
-                console.print(f"  {info.path.name}: {text}")
-                last_text = text
-            found = tracks.streams_of(chosen)
+        previous = None  # (track signature, positions): a series recorded with the same OBS setup is checked once
+        for n, info in enumerate(infos):
+            sig = tracks.signature(info)
+            if previous and previous[0] == sig:
+                found = {k: info.audio[p] for k, p in previous[1].items()}
+            else:
+                console.print(f"  {info.path.name}:")
+                found, _ = self._pick_tracks(info, self.work / "cache" / f"{n:02d}")
+                previous = (sig, {k: s.position for k, s in found.items()})
             if "mic" not in found:
                 raise SystemExit(f"{info.path.name} has no audio track. nightcut needs at least the mic.")
             streams.append(found)

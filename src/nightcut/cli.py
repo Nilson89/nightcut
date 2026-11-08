@@ -111,6 +111,39 @@ def layout(
 
 
 @app.command()
+def tracks(
+    recording: Path = typer.Argument(..., exists=True, dir_okay=False, help="A recording (mkv/mp4)."),
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Your config overrides (YAML)."),
+):
+    """Show the audio tracks and tell nightcut which one is your mic (listen to short pieces).
+    The answer is remembered for all recordings with the same tracks."""
+    from . import tracks as tr
+    from .media import probe
+
+    cfg = load_config(config)
+    info = probe(recording)
+    sample = tr.measure(info, info.audio)
+    typer.echo(f"{recording.name}: {len(info.audio)} audio track(s)")
+    for s in info.audio:
+        lv = sample.levels[s.index]
+        kind = tr.kind_by_name(s.title) or "-"
+        typer.echo(f"  track {s.position + 1}: {s.title[:30]:30s} name says: {kind:5s}  sound {lv.sound:4.0%}  "
+                   f"level range {lv.range_db:4.0f} dB  loudest {lv.loud_db:5.0f} dB")
+    if not sys.stdin.isatty():
+        typer.echo("Run this in a terminal to choose the mic track.")
+        return
+    from rich.console import Console
+
+    folder = Path(cfg["output_dir"]).resolve() / f"{recording.stem}_tracks"
+    chosen = tr.pick_streams(info, cfg, log=Console().print, folder=folder, force_ask=True, sample=sample)
+    mic = chosen.get("mic")
+    if mic and mic.how == "answer":
+        typer.echo(f"Saved: track {mic.stream.position + 1} is your mic for recordings with these tracks "
+                   f"({tr.KNOWN_TRACKS}).")
+    typer.echo("Note: a mic name or index in your config's 'audio' section still comes first.")
+
+
+@app.command()
 def profiles():
     """List available game profiles."""
     for p in sorted(PROFILES_DIR.glob("*.yaml")):
