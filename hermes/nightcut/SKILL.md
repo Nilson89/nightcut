@@ -1,10 +1,10 @@
 ---
 name: nightcut
 description: "Turn raw gameplay recordings into editor-ready timelines (DaVinci Resolve / Premiere), fully local, usually overnight: a highlight video, or Let's Play episodes."
-version: 0.2.0
+version: 0.3.0
 author: Nilson1489
 license: MIT
-platforms: [linux, windows]
+platforms: [linux, windows, macos]
 prerequisites:
   commands: [nightcut, ffmpeg, ollama]
 metadata:

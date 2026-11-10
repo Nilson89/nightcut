@@ -25,7 +25,7 @@ Alles läuft auf deiner eigenen Grafikkarte, nichts wird hochgeladen.
 Das Skript installiert Git, ffmpeg, Ollama und uv (per winget), holt nightcut auf den Desktop,
 richtet die Python-Umgebung ein und lädt die beiden KI-Modelle. Du brauchst etwa 25 GB freien
 Speicher. Wird dein Desktop mit OneDrive synchronisiert, landet nightcut in `C:\nightcut`, und
-auf dem Desktop liegt eine Verknüpfung. Für ein Update startest du `install.bat` einfach noch einmal.
+auf dem Desktop liegt eine Verknüpfung.
 
 Den NVIDIA-Treiber installiert das Skript nicht, der muss schon aktuell sein.
 
@@ -40,10 +40,22 @@ chmod +x install-macos.sh
 
 Das Skript installiert bei Bedarf Homebrew und anschließend Git, ffmpeg, Ollama und uv. Danach
 klont es nightcut nach `~/nightcut`, richtet die Python-Umgebung ein und lädt beide Ollama-Modelle.
-Ein erneuter Lauf aktualisiert die Installation. Ollama und PyTorch verwenden Metal automatisch;
+Ollama und PyTorch verwenden Metal automatisch;
 FFmpeg rendert H.264 über VideoToolbox. Unterstützt werden derzeit M1-Macs und neuer mit
 macOS 14 oder neuer. Benötigt
 werden ungefähr 25 GB freier Speicher.
+
+## Updaten
+
+Doppelklick auf `update.bat` in deinem nightcut-Ordner (macOS/Linux: `./update.sh`). Das Skript holt
+den neuesten Stand von GitHub, aktualisiert die Python-Umgebung, lädt fehlende Modelle und zeigt,
+was neu ist (Details in [CHANGELOG.md](CHANGELOG.md)). Deine `config/local.yaml`, eigene Profile und
+der Ausgabeordner bleiben, wie sie sind. Hast du Dateien von nightcut selbst geändert, fragt das
+Skript vorher nach und legt sie mit `git stash` beiseite. Auch ein erneuter Lauf des Installers
+aktualisiert.
+
+Vor 0.3.0 installiert? Dann fehlt `update.bat` noch in deinem Ordner: Starte `install.bat` (bzw.
+`install-macos.sh`) einmal neu, danach ist `update.bat` da.
 
 ## Installation von Hand
 

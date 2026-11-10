@@ -8,9 +8,24 @@ from typing import Optional
 
 import typer
 
+from . import __version__
 from .config import PROFILES_DIR, load_config
 
 app = typer.Typer(add_completion=False, help="Overnight local-AI editing pipeline for gameplay recordings.")
+
+
+def _show_version(value: bool):
+    if value:
+        typer.echo(f"nightcut {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def main(
+    version: bool = typer.Option(False, "--version", "-V", callback=_show_version, is_eager=True,
+                                 help="Show the nightcut version and exit."),
+):
+    """Overnight local-AI editing pipeline for gameplay recordings."""
 
 
 @app.command()
@@ -148,6 +163,32 @@ def profiles():
     """List available game profiles."""
     for p in sorted(PROFILES_DIR.glob("*.yaml")):
         typer.echo(p.stem)
+
+
+@app.command()
+def models(
+    config: Optional[Path] = typer.Option(None, "--config", "-c", help="Your config overrides (YAML)."),
+):
+    """List the Ollama models your config needs, one per line (used by the installers and update scripts)."""
+    for name in required_models(load_config(config)):
+        typer.echo(name)
+
+
+def required_models(cfg: dict) -> list[str]:
+    """Ollama models of the enabled stages, without duplicates, in a stable order."""
+    names: list[str] = []
+    vision = cfg.get("vision") or {}
+    killfeed = cfg.get("killfeed") or {}
+    editor = cfg.get("editor") or {}
+    if vision.get("enabled", True) and vision.get("model"):
+        names.append(vision["model"])
+    if killfeed.get("enabled", True):
+        model = killfeed.get("model") or vision.get("model")
+        if model:
+            names.append(model)
+    if editor.get("enabled", True) and editor.get("model"):
+        names.append(editor["model"])
+    return list(dict.fromkeys(names))
 
 
 if __name__ == "__main__":

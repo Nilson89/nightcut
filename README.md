@@ -43,7 +43,7 @@ Download [install.bat](https://github.com/Nilson89/nightcut/releases/latest/down
 (or open `install.bat` in the repository → *Download raw file*) and double-click it. It installs
 Git, ffmpeg, Ollama and uv via winget, clones nightcut to your desktop (or `C:\nightcut` with a
 desktop shortcut if your desktop is synced by OneDrive), runs `uv sync` and pulls both models.
-About 25 GB of free space needed; your NVIDIA driver must already be up to date. Run it again to update.
+About 25 GB of free space needed; your NVIDIA driver must already be up to date.
 
 ## One-command install (Apple Silicon macOS)
 
@@ -55,9 +55,20 @@ chmod +x install-macos.sh
 ```
 
 The script installs Homebrew when needed, then Git, FFmpeg, Ollama and uv. It clones nightcut to
-`~/nightcut`, creates the Python environment and downloads both Ollama models. Run it again to update.
+`~/nightcut`, creates the Python environment and downloads both Ollama models.
 Ollama and PyTorch use Metal automatically; FFmpeg uses VideoToolbox for H.264. The installer currently
 targets M1 or newer Macs running macOS 14 or newer. About 25 GB of free space is required.
+
+## Updating
+
+Double-click `update.bat` in your nightcut folder (macOS/Linux: `./update.sh`). It pulls the latest
+version from GitHub, updates the Python environment, downloads models that are missing and shows
+what changed (details in [CHANGELOG.md](CHANGELOG.md)). Your `config/local.yaml`, your own profiles
+and the output folder stay as they are. If you edited files that belong to nightcut, the script
+asks first and puts them aside with `git stash`. Running the installer again also updates.
+
+Installed before 0.3.0? Your folder has no `update.bat` yet: run `install.bat` (or
+`install-macos.sh`) once more, from then on `update.bat` is there.
 
 ## Quick start (manual)
 
@@ -295,6 +306,8 @@ nightcut layout <recording> [--save config/local.yaml]
 nightcut tracks <recording> [--config my.yaml]
 nightcut summary <output folder> [...]
 nightcut profiles
+nightcut models [--config my.yaml]     # Ollama models your config needs
+nightcut --version
 ```
 
 `--fill` / `--no-fill` (highlights): if a calm session has too few strong moments, fill up to the target
