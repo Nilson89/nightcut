@@ -139,10 +139,12 @@ def tracks(
     info = probe(recording)
     sample = tr.measure(info, info.audio)
     typer.echo(f"{recording.name}: {len(info.audio)} audio track(s)")
+    kinds = tr.kinds_by_name(info)
+    mixes = tr.mixes_by_sound(sample, info.audio)
     for s in info.audio:
         lv = sample.levels[s.index]
-        kind = tr.kind_by_name(s.title) or "-"
-        typer.echo(f"  track {s.position + 1}: {s.title[:30]:30s} name says: {kind:5s}  sound {lv.sound:4.0%}  "
+        kind = ("mix" if s.index in mixes and kinds[s.index] in (None, "mic") else kinds[s.index]) or "-"
+        typer.echo(f"  track {s.position + 1}: {s.title[:30]:30s} looks like: {kind:5s}  sound {lv.sound:4.0%}  "
                    f"level range {lv.range_db:4.0f} dB  loudest {lv.loud_db:5.0f} dB")
     if not sys.stdin.isatty():
         typer.echo("Run this in a terminal to choose the mic track.")

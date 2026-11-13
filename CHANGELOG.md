@@ -2,6 +2,21 @@
 
 All notable changes to nightcut. Versions follow [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **The mix is no longer taken for the mic.** A track that sounds like the sum of the other tracks
+  is recognised as the mix and never offered or guessed as the mic, whatever its name. Before, a
+  mix with a gated mic in it could win the best guess. A mix that runs a few milliseconds behind
+  the single tracks is found too.
+- **Best guess = the first track where someone talks.** When nightcut cannot tell the mic from a
+  voice chat and gets no answer (Enter, or no terminal), it now takes the lower track number instead
+  of the bigger level range. OBS setups usually put the own mic before Discord.
+- **Track names with a shared start** (e.g. Aitum Stream Suite: `Aitum Stream Suite Audio <scene> 1`
+  ... `4`) are judged only on the part that differs. Before, the word "Stream" made every track a mix.
+- The game track without a name is found also when a voice chat track is left: if Whisper listened,
+  tracks where someone talks are not taken for the game.
+
 ## [0.3.0] - 2026-11-10
 
 ### Added

@@ -183,7 +183,7 @@ def test_no_terminal_takes_best_guess(monkeypatch):
     fake_levels(monkeypatch, [MIX, CHAT, TrackLevels(0.9, 24.0, -36.0)], speech={1: 30.0, 2: 28.0})
     lines = []
     ch = tracks.pick_streams(info("Track1", "Track2", "Track3"), WHISPER, ask=None, log=lines.append)
-    assert picked(ch, "mic") == (2, "guess")
+    assert picked(ch, "mic") == (1, "guess")  # the first track where someone talks
     assert any("nightcut tracks" in line for line in lines)
 
 
@@ -205,9 +205,105 @@ def test_sample_time_back_to_recording():
     assert s.to_recording(10.0) == 110.0 and s.to_recording(35.0) == 505.0
 
 
-def test_guess_prefers_the_clearest_voice_over_steady_sound(monkeypatch, tmp_path):
-    """Enter pressed (or no terminal): a gated quiet mic with speech beats the steady mix."""
-    fake_levels(monkeypatch, [MIX, GAME, QUIET_GATED_MIC, CHAT], speech={0: 80.0, 2: 10.0, 3: 30.0})
-    ch = tracks.pick_streams(info("Track1", "Track2", "Track3", "Track4"), WHISPER, ask=lambda *a: None,
-                             folder=tmp_path, force_ask=True)
+def test_guess_takes_the_first_voice_but_never_the_mix(monkeypatch, tmp_path):
+    """Enter pressed (or no terminal): the mix on track 1 has the most speech, but it is found by sound
+    and left out; of the two voices the first one is taken."""
+    rec = info("Track1", "Track2", "Track3", "Track4")
+    mix, mic, game, chat = voices()
+    s = sample_of(rec, [mix, game, mic, chat], [MIX, GAME, QUIET_GATED_MIC, CHAT])
+    monkeypatch.setattr(tracks, "speech_per_track",
+                        lambda sample, cands, tcfg, **k: {c.index: ({0: 80.0, 2: 10.0, 3: 30.0}.get(c.position, 0.0), 5.0)
+                                                          for c in cands})
+    monkeypatch.setattr(tracks, "listen_files", lambda inf, sample, cands, sp, folder: [(c, folder / "x.m4a") for c in cands])
+    ch = tracks.pick_streams(rec, WHISPER, ask=lambda *a: None, folder=tmp_path, force_ask=True, sample=s)
     assert picked(ch, "mic") == (2, "guess")
+
+
+def test_mix_running_late_is_found():
+    """The mix can be a few ms behind the single tracks (BF2042 recording: 187 samples)."""
+    rec = info(*AITUM)
+    mix, mic, game, chat = voices()
+    late = np.roll(mix, 187)
+    assert tracks.mixes_by_sound(sample_of(rec, [late, mic, game, chat], [MIX, MIC, GAME, CHAT]), rec.audio) == {rec.audio[0].index}
+
+
+# ---------------------------------------------------------------- shared names, mix by sound
+
+AITUM = [f"Aitum Stream Suite Audio Spiel+Facecam {i}" for i in range(1, 5)]
+
+
+def test_shared_words_say_nothing():
+    assert tracks.distinct_titles(AITUM) == ["1", "2", "3", "4"]
+    assert tracks.distinct_titles(["Aitum Mic", "Aitum Game"]) == ["Mic", "Game"]
+    assert tracks.distinct_titles(["MIC 1", "MIC 2"]) == ["1", "2"]
+    assert tracks.distinct_titles(["Stream"]) == ["Stream"]                  # a single track keeps its name
+    assert tracks.distinct_titles(["Stream", "Stream"]) == ["Stream", "Stream"]  # one word is always kept
+    assert tracks.distinct_titles(["GAME", "MIC Main", "MIC Tonor"]) == ["GAME", "MIC Main", "MIC Tonor"]
+    assert set(tracks.kinds_by_name(info(*AITUM)).values()) == {None}       # not four mixes
+
+
+def voices(seed: int = 0, n: int = 16000 * 60):
+    """Two gated voices (talking in turns), steady game sound, and their sum as the mix."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(n) / 16000
+    gate_a = (np.sin(2 * np.pi * t / 7) > 0.3).astype(float)
+    gate_b = (np.sin(2 * np.pi * t / 5 + 1) > 0.3).astype(float)
+    mic = rng.normal(0, 3000, n) * gate_a
+    chat = rng.normal(0, 3000, n) * gate_b
+    game = rng.normal(0, 600, n)
+    mix = mic + chat + game
+    return [np.clip(x, -32768, 32767).astype(np.int16) for x in (mix, mic, game, chat)]
+
+
+def sample_of(rec: MediaInfo, pcms, levels) -> tracks.Sample:
+    return tracks.Sample({s.index: lv for s, lv in zip(rec.audio, levels)},
+                         {s.index: p for s, p in zip(rec.audio, pcms)}, [(0.0, len(pcms[0]) / 16000)])
+
+
+def test_mix_found_by_sound():
+    rec = info(*AITUM)
+    s = sample_of(rec, voices(), [MIX, MIC, GAME, CHAT])
+    assert tracks.mixes_by_sound(s, rec.audio) == {rec.audio[0].index}
+
+
+def test_mic_is_not_a_mix_although_mix_minus_game_gives_it():
+    # only mix, mic and game: mic = mix - game, but that needs a negative gain
+    mix, mic, game, _ = voices()
+    mix = np.clip(mic.astype(float) + game, -32768, 32767).astype(np.int16)
+    rec = info("Track1", "Track2", "Track3")
+    s = sample_of(rec, [mix, mic, game], [MIX, MIC, GAME])
+    assert tracks.mixes_by_sound(s, rec.audio) == {rec.audio[0].index}
+
+
+def test_unrelated_tracks_are_no_mix():
+    rng = np.random.default_rng(1)
+    pcms = [rng.normal(0, 2000, 16000 * 30).astype(np.int16) for _ in range(4)]
+    rec = info(*AITUM)
+    assert tracks.mixes_by_sound(sample_of(rec, pcms, [MIX, MIC, GAME, CHAT]), rec.audio) == set()
+
+
+def test_aitum_recording_never_takes_the_mix(monkeypatch, tmp_path):
+    """Like the Aitum recording: 1 mix, 2 mic, 3 game, 4 Discord, all named alike. Levels and Whisper
+    cannot tell mic and Discord apart: nightcut asks, and only the two voices and the game are offered."""
+    rec = info(*AITUM)
+    pcms = voices()
+    lv = [TrackLevels(1.0, 22.0, -15.4), TrackLevels(0.67, 21.0, -16.5),
+          TrackLevels(1.0, 11.8, -33.9), TrackLevels(0.68, 21.0, -16.2)]
+    monkeypatch.setattr(tracks, "measure", lambda inf, streams, *a, **k: sample_of(rec, pcms, lv))
+    monkeypatch.setattr(tracks, "speech_per_track",
+                        lambda sample, cands, tcfg, **k: {s.index: ({0: 100.0, 1: 52.0, 3: 60.0}.get(s.position, 0.0), 5.0)
+                                                          for s in cands})
+    monkeypatch.setattr(tracks, "listen_files", lambda inf, sample, cands, sp, folder: [(s, folder / "x.m4a") for s in cands])
+    offered = []
+
+    def ask(options, name):
+        offered.extend(s.position for s, _ in options)
+        return options[0][0]
+    ch = tracks.pick_streams(rec, WHISPER, ask=ask, folder=tmp_path)
+    assert 0 not in offered
+    assert picked(ch, "mic") == (1, "answer")
+    assert picked(ch, "game") == (2, "level")    # Discord talks, so the quiet track without speech is the game
+
+    # no terminal: the first voice, track 2 (the own mic in this setup), never the mix
+    ch = tracks.pick_streams(rec, WHISPER, ask=None, known_file=tmp_path / "none.yaml")
+    assert picked(ch, "mic") == (1, "guess")

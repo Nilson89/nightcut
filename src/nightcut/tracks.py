@@ -104,6 +104,26 @@ def kind_by_name(title: str) -> str | None:
     return None
 
 
+def distinct_titles(titles: list[str]) -> list[str]:
+    """The titles without the words all of them start with.
+
+    Plugins like Aitum name every track "Aitum Stream Suite Audio <scene> 1" ... "4". A word that
+    every track has says nothing about any of them ("Stream" would make all four a mix), so only
+    the rest counts. Single tracks are left as they are."""
+    if len(titles) < 2:
+        return list(titles)
+    words = [t.split() for t in titles]
+    n = 0
+    while all(len(w) > n + 1 for w in words) and len({w[n].lower() for w in words}) == 1:
+        n += 1  # at least one word is always kept
+    return [" ".join(w[n:]) for w in words]
+
+
+def kinds_by_name(info: MediaInfo) -> dict[int, str | None]:
+    """kind_by_name per stream index, judged on what tells the tracks apart."""
+    return {s.index: kind_by_name(t) for s, t in zip(info.audio, distinct_titles([s.title for s in info.audio]))}
+
+
 # ---------------------------------------------------------------- measuring
 
 def levels_from_db(db: np.ndarray) -> TrackLevels:
@@ -155,6 +175,74 @@ def measure(info: MediaInfo, streams: list[AudioStream], windows: int = SAMPLE_W
             spans.append((t, n / SR))
     pcm = {idx: np.concatenate(p) if p else np.zeros(0, np.int16) for idx, p in parts.items()}
     return Sample({idx: levels_from_db(_db(p)) for idx, p in pcm.items()}, pcm, spans)
+
+
+MIX_FIT = 0.9           # share of a track's signal the other tracks must explain for it to be the mix
+MIX_PART = 0.1          # gain from which another track counts as part of the mix
+
+
+def _mix_fit(target: np.ndarray, others: list[np.ndarray]) -> tuple[float, int]:
+    """How well `target` is a sum of `others` with non-negative gains: (explained share, tracks in it).
+
+    Least squares over every subset of the others, keeping the best fit whose gains are all positive:
+    a mic is mix minus game (a negative gain), so it never looks like a sum. Few tracks, so trying all
+    subsets is cheap (it works on the small Gram matrix, not the samples)."""
+    x = np.stack(others).astype(np.float64)
+    y = target.astype(np.float64)
+    gram, xy, yy = x @ x.T, x @ y, float(y @ y)
+    if yy <= 0:
+        return 0.0, 0
+    best = (0.0, 0)
+    k = len(others)
+    for mask in range(1, 1 << k):
+        idx = [i for i in range(k) if mask >> i & 1]
+        g = gram[np.ix_(idx, idx)]
+        try:
+            gains = np.linalg.solve(g, xy[idx])
+        except np.linalg.LinAlgError:
+            continue
+        if (gains <= 0).any():
+            continue
+        explained = float(xy[idx] @ gains) / yy  # 1 - residual / total for a least-squares fit
+        parts = int((gains >= MIX_PART).sum())
+        if explained > best[0]:
+            best = (explained, parts)
+    return best
+
+
+def _lag(a: np.ndarray, b: np.ndarray, max_lag: int = SR // 2, length: int = SR * 30) -> int:
+    """Shift (in samples) that lines b up with a: np.roll(b, lag) matches a best. Searched up to
+    half a second either way, on the first 30 s."""
+    m = min(len(a), len(b), length)
+    if m < 2:
+        return 0
+    size = 1 << (2 * m - 1).bit_length()
+    corr = np.fft.irfft(np.fft.rfft(a[:m], size) * np.conj(np.fft.rfft(b[:m], size)), size)
+    lags = np.r_[corr[:max_lag + 1], corr[-max_lag:]]
+    k = int(np.argmax(lags))
+    return k if k <= max_lag else k - 2 * max_lag - 1
+
+
+def mixes_by_sound(sample: Sample, streams: list[AudioStream]) -> set[int]:
+    """Stream indexes that are the sum of at least two other tracks (a recording of everything).
+
+    Without measured audio (or with fewer than three tracks with sound) nothing is found."""
+    pcm = {s.index: sample.pcm.get(s.index) for s in streams}
+    alive = [s for s in streams if pcm[s.index] is not None and len(pcm[s.index])
+             and sample.levels[s.index].loud_db > -70]
+    if len(alive) < 3:
+        return set()
+    n = min(len(pcm[s.index]) for s in alive)
+    step = max(1, n // 400_000)  # a few hundred thousand samples are plenty for the fit
+    full = {s.index: pcm[s.index][:n].astype(np.float32) for s in alive}
+    found = set()
+    for s in alive:
+        # the mix can run a few ms behind the single tracks (seen: 12 ms): line each one up first
+        others = [np.roll(full[o.index], _lag(full[s.index], full[o.index]))[::step] for o in alive if o is not s]
+        explained, parts = _mix_fit(full[s.index][::step], others)
+        if explained >= MIX_FIT and parts >= 2:
+            found.add(s.index)
+    return found
 
 
 def _alive(streams: list[AudioStream], lv: dict[int, TrackLevels]) -> list[AudioStream]:
@@ -362,7 +450,18 @@ def pick_streams(info: MediaInfo, cfg: dict, log=None, ask="auto", folder: Path 
         taken.add(stream.index)
         return True
 
-    kinds = {s.index: kind_by_name(s.title) for s in info.audio}
+    kinds = kinds_by_name(info)
+    speech: dict[int, tuple[float, float | None]] = {}
+    mixes_checked = False
+
+    def mark_mixes() -> None:
+        """Tracks that sound like the sum of others are the mix, whatever their name says."""
+        nonlocal mixes_checked
+        if not mixes_checked:
+            mixes_checked = True
+            for idx in mixes_by_sound(get_sample(), info.audio):
+                if kinds[idx] in (None, "mic"):
+                    kinds[idx] = "mix"
 
     # 1 + 2: what the config says
     for name, spec in specs.items():
@@ -392,15 +491,20 @@ def pick_streams(info: MediaInfo, cfg: dict, log=None, ask="auto", folder: Path 
         if len(info.audio) == 1 and not force_ask:
             take("mic", info.audio[0], "only track")
         else:
-            _mic_by_sound(info, get_sample(), kinds, taken, take, tcfg, ask, folder, force_ask, known_file, log)
+            mark_mixes()
+            speech = _mic_by_sound(info, get_sample(), kinds, taken, take, tcfg, ask, folder, force_ask, known_file, log)
 
-    # game without a name: only if exactly one unnamed track with sound is left. With several
-    # (mix, voice chat, game) the sound alone cannot tell them apart; then highlights work without it.
+    # game without a name: only if exactly one unnamed track with sound is left, after taking out
+    # the mix (found by sound) and, if Whisper listened, the tracks where someone talks (voice chat).
+    # With several left the sound alone cannot tell them apart; then highlights work without it.
     if ("game" not in chosen and specs["game"] and "mic" in chosen and len(info.audio) > 1
             and any(kinds[s.index] is None and s.index not in taken for s in info.audio)):
+        mark_mixes()
         lv = get_sample().levels
         rest = [s for s in info.audio if s.index not in taken and kinds[s.index] is None
                 and lv[s.index].sound >= MIN_SOUND and lv[s.index].loud_db > -70]
+        if len(rest) > 1 and speech:
+            rest = [s for s in rest if speech.get(s.index, (0.0, None))[0] < MIN_SPEECH_S]
         if len(rest) == 1:
             take("game", rest[0], "level")
 
@@ -411,21 +515,23 @@ def pick_streams(info: MediaInfo, cfg: dict, log=None, ask="auto", folder: Path 
     return chosen
 
 
-def _mic_by_sound(info, sample, kinds, taken, take, tcfg, ask, folder, force_ask, known_file, log) -> None:
+def _mic_by_sound(info, sample, kinds, taken, take, tcfg, ask, folder, force_ask, known_file,
+                  log) -> dict[int, tuple[float, float | None]]:
+    """Choose the mic by level, speech or your answer. Returns the speech found per track (may be empty)."""
     lv = sample.levels
+    speech: dict[int, tuple[float, float | None]] = {}
     free = [s for s in info.audio if s.index not in taken and kinds[s.index] not in ("party",)]
     candidates = _alive([s for s in free if kinds[s.index] in (None, "mic")], lv) or _alive(free, lv) or free
     if not candidates:
-        return
+        return speech
     if len(candidates) == 1 and not force_ask:
         take("mic", candidates[0], "level")
-        return
+        return speech
     pick = None if force_ask else clear_mic(candidates, lv)
     if pick is not None:
         take("mic", pick, "level")
-        return
+        return speech
 
-    speech: dict[int, tuple[float, float | None]] = {}
     if tcfg.get("model") and len(candidates) > 1:
         if log:
             log("Not clear from the levels which track is the mic: listening for speech with Whisper ...")
@@ -437,7 +543,7 @@ def _mic_by_sound(info, sample, kinds, taken, take, tcfg, ask, folder, force_ask
         pick = None if force_ask else mic_by_speech(candidates, lv, speech)
         if pick is not None:
             take("mic", pick, "speech", f"{speech[pick.index][0]:.0f} s of speech in the samples")
-            return
+            return speech
 
     if ask:
         own_folder = folder or Path(tempfile.mkdtemp(prefix="nightcut_listen_"))
@@ -446,12 +552,13 @@ def _mic_by_sound(info, sample, kinds, taken, take, tcfg, ask, folder, force_ask
         if answer is not None:
             take("mic", answer, "answer")
             remember_mic(info, answer, known_file)
-            return
-    # best guess: of the tracks where someone talks, the clearest voice (biggest level range);
-    # without speech results, the level rule
+            return speech
+    # best guess: the first track where someone talks (OBS setups put the own mic before voice chat;
+    # the mix is already out, it was found by sound); without speech results, the level rule
     talkers = [s for s in candidates if speech.get(s.index, (0.0, None))[0] >= MIN_SPEECH_S]
-    guess = max(talkers, key=lambda s: lv[s.index].range_db) if talkers else best_mic(candidates, lv)
+    guess = min(talkers, key=lambda s: s.position) if talkers else best_mic(candidates, lv)
     take("mic", guess or candidates[0], "guess")
+    return speech
 
 
 def describe(chosen: dict[str, Choice], levels: dict[int, TrackLevels] | None = None) -> str:
