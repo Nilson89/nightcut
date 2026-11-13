@@ -289,28 +289,33 @@ class Run:
         self.cfg = {**self.cfg, "layout": {**lay, **{k: found[k] for k in ("gameplay", "facecam", "facecam_burned_in")}}}
         self.log["layout"] = found
 
-    def _pick_tracks(self, info, folder: Path) -> tuple[dict, str]:
-        """Mic, game and party streams. Chosen once per run and kept in the cache, so a resumed
-        run neither asks again nor decides differently. Returns (streams, description)."""
+    def _pick_tracks(self, info, folder: Path) -> tuple[dict, object, str]:
+        """Mic, game and party streams, and the mix (kept muted in the timeline). Chosen once per run
+        and kept in the cache, so a resumed run neither asks again nor decides differently.
+        Returns (streams, mix or None, description)."""
         cache = folder / "tracks.json"
         if cache.exists() and "audio" not in self.force:
             saved = json.loads(cache.read_text(encoding="utf-8"))
             streams = {k: info.audio[p] for k, p in saved["positions"].items() if p < len(info.audio)}
+            mix = saved.get("mix")
             console.print(f"  [dim]{saved['text']} (cached)[/dim]")
-            return streams, saved["text"]
+            return streams, info.audio[mix] if mix is not None and mix < len(info.audio) else None, saved["text"]
         chosen = tracks.pick_streams(info, self.cfg, log=lambda t: console.print(f"  {t}"), folder=folder / "listen")
         text = tracks.describe(chosen)
         streams = tracks.streams_of(chosen)
+        mix = tracks.mix_of(chosen)
         folder.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps({"positions": {k: s.position for k, s in streams.items()}, "text": text},
+        cache.write_text(json.dumps({"positions": {k: s.position for k, s in streams.items()},
+                                     "mix": mix.position if mix else None, "text": text},
                                     indent=2, ensure_ascii=False), encoding="utf-8")
-        return streams, text
+        return streams, mix, text
 
     def _run(self) -> Path:
         info = probe(self.source)
         self._resolve_layout(self.source)
         cfg = self.cfg
-        streams, _ = self._pick_tracks(info, self.work / "cache")
+        streams, mix, _ = self._pick_tracks(info, self.work / "cache")
+        timeline_audio = tracks.timeline_tracks(info, streams, mix)  # every track, for the edit
         if "mic" not in streams:
             raise SystemExit(f"{self.source.name} has no audio track. nightcut needs at least the mic.")
         console.print(f"[bold]{self.source.name}[/bold]: {info.duration / 3600:.2f} h, {info.width}x{info.height} "
@@ -420,7 +425,7 @@ class Run:
             jobs = list(enumerate(edit["clips"], 1))
             # one encoder per GPU of this run (with one GPU: the default encoder)
             encoders = [self._gpu(i) for i in range(max(1, len(self.gpu_list)))]
-            return gpus.parallel_map(jobs, encoders, lambda job, gpu: render_clip(info, job[1], job[0], streams,
+            return gpus.parallel_map(jobs, encoders, lambda job, gpu: render_clip(info, job[1], job[0], timeline_audio,
                                                                                    cfg, out, gpu=gpu))
 
         def do_shorts():
@@ -463,7 +468,7 @@ class Run:
 
         xml_path = self.work / f"{self.source.stem}_{cfg['export']['sequence_name_suffix']}.xml"
         self._stage("export", lambda: str(export_xmeml.write(
-            rendered, list(streams), cfg, xml_path, f"{self.source.stem} {cfg['export']['sequence_name_suffix']}")))
+            rendered, timeline_audio, cfg, xml_path, f"{self.source.stem} {cfg['export']['sequence_name_suffix']}")))
 
         if cfg.get("thumbnails", {}).get("enabled") and edit["clips"]:
             self._stage("thumbnails", lambda: thumbnails.make(

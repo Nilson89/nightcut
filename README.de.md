@@ -117,6 +117,12 @@ Am besten funktioniert nightcut mit **getrennten Audiospuren**. In OBS unter
    nightcut ohne Fenster (z.B. geplant über Hermes), nimmt es seinen besten Tipp und sagt das im Log.
 6. Hat die Aufnahme nur **eine** Tonspur, nimmt nightcut sie als Gesamtmix.
 
+Das entscheidet nur, worauf nightcut *hört*. Die Clips und die Timeline behalten immer **alle**
+Audiospuren der Aufnahme, getrennt und in der Original-Reihenfolge. So kannst du Spiel, Mikro und
+Voice-Chat in DaVinci oder Premiere noch abmischen. Erkannte Spuren heißen `MIC`, `GAME`, `PARTY`, die
+anderen behalten ihren Namen. Der Gesamtmix liegt auch in der Timeline, ist aber ausgeschaltet: Bei
+Bedarf seine Clips einfach aktivieren.
+
 Zu Beginn jedes Laufs steht im Fenster, welche Spur genommen wurde und warum, z.B.
 `Audio: mic = track 3 'Track3' (by its level, level range 39 dB)`. Stimmt das mal nicht, sag es nightcut
 einmal mit:

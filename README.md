@@ -103,7 +103,7 @@ Properties*, for example:
 
 | Track | Content | Config name |
 |---|---|---|
-| 1 | Mix | (ignored) |
+| 1 | Mix | (not analysed, muted in the timeline) |
 | 2 | Microphone | `MIC` |
 | 3 | Game | `GAME` |
 | 4 | Discord / party chat | `PARTY` |
@@ -122,6 +122,11 @@ Properties*, for example:
    comes at start, not in the middle of the night; without a terminal (scheduled runs) nightcut takes
    its best guess and says so in the log,
 6. with a **single** track, it is used as a full mix.
+
+This only decides what nightcut *listens to*. The clips and the timeline always keep **every** audio
+track of the recording, separately and in the original order, so you can still balance game, mic and
+voice chat in Resolve or Premiere. Recognised tracks are named `MIC`, `GAME`, `PARTY`, the others keep
+their own name. The mix is on the timeline too, but switched off: enable its clips if you need it.
 
 Every run prints which track was taken and why, e.g.
 `Audio: mic = track 3 'Track3' (by its level, level range 39 dB)`. If that is ever wrong, run
