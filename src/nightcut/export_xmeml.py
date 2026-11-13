@@ -14,6 +14,7 @@ from pathlib import Path
 from urllib.parse import quote
 
 from .media import probe
+from .tracks import TimelineTrack
 
 
 def _rate(parent: ET.Element, fps: float) -> None:
@@ -69,7 +70,7 @@ class _Files:
             self._durations[path] = round(probe(Path(path)).duration * self.fps)
         return self._durations[path]
 
-    def add(self, parent: ET.Element, path: str, n_audio: int) -> None:
+    def add(self, parent: ET.Element, path: str, audio: list[TimelineTrack]) -> None:
         fid = "file-" + Path(path).stem
         if fid in self.seen:
             _sub(parent, "file", id=fid)
@@ -84,27 +85,28 @@ class _Files:
         _timecode(f, self.fps)
         media = _sub(f, "media")
         _video_sc(_sub(media, "video"), self.fps, info.width, info.height)
-        for _ in range(n_audio):
-            audio = _sub(media, "audio")
-            asc = _sub(audio, "samplecharacteristics")
+        for t in audio:
+            a = _sub(media, "audio")
+            asc = _sub(a, "samplecharacteristics")
             _sub(asc, "depth", 16)
             _sub(asc, "samplerate", 48000)
-            _sub(audio, "channelcount", 2)
+            _sub(a, "channelcount", t.stream.channels)
 
 
 def _clipitem(track: ET.Element, cid: str, name: str, fps: float, start: int, end: int, src_in: int,
-              file_path: str, files: _Files, n_audio: int, mediatype: str, trackindex: int) -> ET.Element:
+              file_path: str, files: _Files, audio: list[TimelineTrack], mediatype: str, trackindex: int,
+              enabled: bool = True) -> ET.Element:
     ci = _sub(track, "clipitem", id=cid)
     _sub(ci, "masterclipid", "master-" + Path(file_path).stem)
     _sub(ci, "name", name)
-    _sub(ci, "enabled", "TRUE")
+    _sub(ci, "enabled", "TRUE" if enabled else "FALSE")
     _sub(ci, "duration", files.duration(file_path))
     _rate(ci, fps)
     _sub(ci, "start", start)
     _sub(ci, "end", end)
     _sub(ci, "in", src_in)
     _sub(ci, "out", src_in + (end - start))
-    files.add(ci, file_path, n_audio)
+    files.add(ci, file_path, audio)
     st = _sub(ci, "sourcetrack")
     _sub(st, "mediatype", mediatype)
     _sub(st, "trackindex", trackindex)
@@ -144,11 +146,12 @@ def _pip_filter(ci: ET.Element, pip: dict, seq_w: int, seq_h: int, cam_w: int, c
     _sub(v, "vert", round(vert / 2, 4))
 
 
-def write(clips: list[dict], audio_names: list[str], cfg: dict, out_path: Path, sequence_name: str) -> Path:
+def write(clips: list[dict], audio: list[TimelineTrack], cfg: dict, out_path: Path, sequence_name: str) -> Path:
+    """audio: the tracks in the clip files, in their order. A muted one (the mix) is on the timeline
+    but switched off: enable its clips in the editor to use it."""
     first = probe(Path(clips[0]["gameplay_file"]))
     fps = first.fps
     seq_w, seq_h = first.width, first.height
-    n_audio = len(audio_names)
     files = _Files(fps)
 
     root = ET.Element("xmeml", version="4")
@@ -164,11 +167,16 @@ def write(clips: list[dict], audio_names: list[str], cfg: dict, out_path: Path, 
     v1 = _sub(video, "track")
     v2 = _sub(video, "track") if clips[0].get("facecam_file") else None
 
-    audio = _sub(media, "audio")
-    asc = _sub(_sub(audio, "format"), "samplecharacteristics")
+    audio_el = _sub(media, "audio")
+    asc = _sub(_sub(audio_el, "format"), "samplecharacteristics")
     _sub(asc, "depth", 16)
     _sub(asc, "samplerate", 48000)
-    a_tracks = [_sub(audio, "track") for _ in audio_names]
+    a_tracks = []
+    for at in audio:
+        track = _sub(audio_el, "track")
+        if at.muted:
+            _sub(track, "enabled", "FALSE")
+        a_tracks.append(track)
 
     pip = cfg["export"]["facecam_pip"]
     cam = probe(Path(clips[0]["facecam_file"])) if v2 is not None else None
@@ -177,7 +185,7 @@ def write(clips: list[dict], audio_names: list[str], cfg: dict, out_path: Path, 
         length = round((c["end"] - c["start"]) * fps)
         src_in = round(c["trim_in"] * fps)
         name = f"{c['n']:02d} {c.get('title') or 'Highlight'}"
-        vi = _clipitem(v1, f"v1-{c['n']}", name, fps, t, t + length, src_in, c["gameplay_file"], files, n_audio, "video", 1)
+        vi = _clipitem(v1, f"v1-{c['n']}", name, fps, t, t + length, src_in, c["gameplay_file"], files, audio, "video", 1)
         if "score" in c:  # highlight clips carry a marker with the reason; Let's Play pieces do not
             marker = _sub(vi, "marker")
             _sub(marker, "name", c.get("title") or "Highlight")
@@ -186,12 +194,12 @@ def write(clips: list[dict], audio_names: list[str], cfg: dict, out_path: Path, 
             _sub(marker, "out", -1)
         if v2 is not None:
             ci = _clipitem(v2, f"v2-{c['n']}", f"{name} (facecam)", fps, t, t + length, src_in,
-                           c["facecam_file"], files, 0, "video", 1)
+                           c["facecam_file"], files, [], "video", 1)
             if pip.get("enabled", True):
                 _pip_filter(ci, pip, seq_w, seq_h, cam.width, cam.height)
-        for idx, track in enumerate(a_tracks, 1):
-            _clipitem(track, f"a{idx}-{c['n']}", f"{name} {audio_names[idx - 1].upper()}", fps, t, t + length,
-                      src_in, c["gameplay_file"], files, n_audio, "audio", idx)
+        for idx, (track, at) in enumerate(zip(a_tracks, audio), 1):
+            _clipitem(track, f"a{idx}-{c['n']}", f"{name} {at.label}", fps, t, t + length,
+                      src_in, c["gameplay_file"], files, audio, "audio", idx, enabled=not at.muted)
         t += length
     seq_duration.text = str(t)
     _timecode(seq, fps)

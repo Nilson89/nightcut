@@ -35,19 +35,21 @@ class LetsPlayRun(Run):
         strength = lcfg["strengths"][lcfg["strength"]]
         offsets = list(np.cumsum([0.0] + [i.duration for i in infos[:-1]]))
         total_src = sum(i.duration for i in infos)
-        streams, voice_streams = [], []
+        streams, voice_streams, timeline_audio = [], [], []
         previous = None  # (track signature, positions): a series recorded with the same OBS setup is checked once
         for n, info in enumerate(infos):
             sig = tracks.signature(info)
             if previous and previous[0] == sig:
                 found = {k: info.audio[p] for k, p in previous[1].items()}
+                mix = info.audio[previous[2]] if previous[2] is not None else None
             else:
                 console.print(f"  {info.path.name}:")
-                found, _ = self._pick_tracks(info, self.work / "cache" / f"{n:02d}")
-                previous = (sig, {k: s.position for k, s in found.items()})
+                found, mix, _ = self._pick_tracks(info, self.work / "cache" / f"{n:02d}")
+                previous = (sig, {k: s.position for k, s in found.items()}, mix.position if mix else None)
             if "mic" not in found:
                 raise SystemExit(f"{info.path.name} has no audio track. nightcut needs at least the mic.")
             streams.append(found)
+            timeline_audio.append(tracks.timeline_tracks(info, found, mix))  # every track, for the edit
             # other voices (voice chat, an AI assistant only heard in the mix): no cuts while they talk
             voices = {name: found.get(name) if name in found else info.find_audio(cfg["audio"].get(name))
                       for name in lcfg.get("protect_voices") or []}
@@ -150,22 +152,21 @@ class LetsPlayRun(Run):
             series = lcfg.get("series_name") or cfg["profile"].get("name", "Let's Play")
             separate_cam = layout.get("facecam") and not layout.get("facecam_burned_in")
             for ep in eps:
-                # rendered files carry the configured tracks, the originals all of theirs
-                names = list(streams[0])
+                # rendered files and originals both carry every track of the recording
+                audio = timeline_audio[ep["pieces"][0]["file"]]
                 if separate_cam or not lcfg["reference_source"]:
                     # stacked layouts (gameplay + cam in one canvas) need clean files per piece
                     media = self.work / "media" / f"ep{ep['n']:02d}"
                     media.mkdir(parents=True, exist_ok=True)
-                    clips = [render_clip(infos[p["file"]], p, k, streams[p["file"]], cfg, media)
+                    clips = [render_clip(infos[p["file"]], p, k, timeline_audio[p["file"]], cfg, media)
                              for k, p in enumerate(ep["pieces"], 1)]
                 else:
                     clips = [{**p, "n": k, "gameplay_file": str(infos[p["file"]].path), "facecam_file": None,
                               "trim_in": p["start"]} for k, p in enumerate(ep["pieces"], 1)]
-                    names = [a.title for a in infos[ep["pieces"][0]["file"]].audio]
                 for c in clips:
                     c["title"] = f"Teil {c['n']}"
                 path = self.work / f"ep{ep['n']:02d}_{self.work.name}.xml"
-                export_xmeml.write(clips, names, cfg, path, f"{series} #{ep['n'] + first - 1:02d}")
+                export_xmeml.write(clips, audio, cfg, path, f"{series} #{ep['n'] + first - 1:02d}")
                 out.append(str(path))
             return out
         xmls = self._stage("export", do_export)

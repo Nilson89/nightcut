@@ -307,3 +307,26 @@ def test_aitum_recording_never_takes_the_mix(monkeypatch, tmp_path):
     # no terminal: the first voice, track 2 (the own mic in this setup), never the mix
     ch = tracks.pick_streams(rec, WHISPER, ask=None, known_file=tmp_path / "none.yaml")
     assert picked(ch, "mic") == (1, "guess")
+
+
+def test_mix_found_by_name_is_kept_apart(monkeypatch):
+    fake_levels(monkeypatch, [MIX, GAME, MIC, CHAT])
+    ch = tracks.pick_streams(info("Alles", "Spiel", "Mikrofon", "Voice Chat"), DEFAULT_AUDIO)
+    assert picked(ch, "mix") == (0, "common name")
+    assert "mix" not in tracks.streams_of(ch)  # the analysis never listens to the mix
+    assert tracks.mix_of(ch).position == 0
+
+
+def test_mix_from_config(monkeypatch):
+    fake_levels(monkeypatch, [MIX, GAME, MIC])
+    ch = tracks.pick_streams(info("GAME", "MIC", "Track3"), {**DEFAULT_AUDIO, "mix": {"title": None, "index": 2}})
+    assert picked(ch, "mix") == (2, "name")
+
+
+def test_timeline_keeps_every_track_and_mutes_the_mix():
+    rec = info("Aitum Audio Szene 1", "Aitum Audio Szene 2", "Aitum Audio Szene 3", "", "Aitum Audio Szene 5")
+    a = rec.audio
+    out = tracks.timeline_tracks(rec, {"mic": a[1], "game": a[2]}, mix=a[0])
+    assert [t.stream.position for t in out] == [0, 1, 2, 3, 4]
+    assert [t.label for t in out] == ["MIX", "MIC", "GAME", "TRACK 4", "Aitum Audio Szene 5"]
+    assert [t.muted for t in out] == [True, False, False, False, False]

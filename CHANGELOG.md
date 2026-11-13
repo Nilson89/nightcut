@@ -4,6 +4,14 @@ All notable changes to nightcut. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+### Changed
+- **Every audio track stays in the edit.** Rendered clips and the Resolve/Premiere timeline now carry
+  all audio tracks of the recording, separately and in their original order, not only the ones the
+  analysis uses. Before, a track nightcut did not recognise (e.g. voice chat on an unnamed Aitum
+  track, music, alerts) was dropped. Known tracks are named `MIC`, `GAME`, `PARTY`, the others keep
+  their name. The mix (found by name, by sound, or set as `audio.mix`) is on the timeline but
+  switched off.
+
 ### Fixed
 - **The mix is no longer taken for the mic.** A track that sounds like the sum of the other tracks
   is recognised as the mix and never offered or guessed as the mic, whatever its name. Before, a

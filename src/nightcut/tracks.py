@@ -508,6 +508,15 @@ def pick_streams(info: MediaInfo, cfg: dict, log=None, ask="auto", folder: Path 
         if len(rest) == 1:
             take("game", rest[0], "level")
 
+    # the mix: not used for the analysis, but kept (muted) in the timeline. By the config, a mix name,
+    # or by sound when the tracks were measured anyway (never measured only for this).
+    mix_spec = audio_cfg.get("mix")
+    mix = (_user_title(info, mix_spec) or _fixed_index(info, mix_spec)) if mix_spec else None
+    how = "name" if mix else "common name"
+    if mix is None:
+        mix = next((s for s in info.audio if kinds[s.index] == "mix" and s.index not in taken), None)
+    take("mix", mix, how)
+
     if log:
         log(describe(chosen, sample.levels if sample else None))
         if chosen.get("mic") and chosen["mic"].how == "guess":
@@ -566,10 +575,12 @@ def describe(chosen: dict[str, Choice], levels: dict[int, TrackLevels] | None = 
                 "answer": "your answer", "level": "by its level", "speech": "Whisper heard speech, clearest voice",
                 "only track": "the only track (a mix)", "guess": "best guess, unsure"}
     parts = []
-    for name in ("mic", "game", "party"):
+    for name in ("mic", "game", "party", "mix"):
         c = chosen.get(name)
         if c and c.stream:
             extra = f", {c.note}" if c.note else ""
+            if name == "mix":
+                extra += ", muted in the timeline"
             if levels and c.how == "level" and c.stream.index in levels:
                 extra += f", level range {levels[c.stream.index].range_db:.0f} dB"
             parts.append(f"{name} = track {c.stream.position + 1} '{c.stream.title}' ({how_text.get(c.how, c.how)}{extra})")
@@ -577,4 +588,31 @@ def describe(chosen: dict[str, Choice], levels: dict[int, TrackLevels] | None = 
 
 
 def streams_of(chosen: dict[str, Choice]) -> dict[str, AudioStream]:
-    return {name: c.stream for name, c in chosen.items() if c.stream is not None}
+    """The streams the analysis listens to: mic, game, party (not the mix)."""
+    return {name: c.stream for name, c in chosen.items() if c.stream is not None and name != "mix"}
+
+
+def mix_of(chosen: dict[str, Choice]) -> AudioStream | None:
+    c = chosen.get("mix")
+    return c.stream if c else None
+
+
+# ---------------------------------------------------------------- timeline
+
+@dataclass
+class TimelineTrack:
+    stream: AudioStream
+    label: str          # MIC / GAME / PARTY / MIX for known tracks, else the track's own name
+    muted: bool = False
+
+
+def timeline_tracks(info: MediaInfo, streams: dict[str, AudioStream], mix: AudioStream | None = None) -> list[TimelineTrack]:
+    """Every audio track of the recording, in its original order, for the edit: the analysis only
+    needs mic, game and voice chat, but the editor wants to balance all of them. The mix is kept
+    but muted, so it is there when needed without doubling everything."""
+    role = {s.index: name.upper() for name, s in streams.items()}
+    if mix is not None and mix.index not in role:
+        role[mix.index] = "MIX"
+    return [TimelineTrack(s, role.get(s.index) or s.title.strip() or f"TRACK {s.position + 1}",
+                          muted=role.get(s.index) == "MIX")
+            for s in info.audio]
