@@ -37,7 +37,7 @@ So results of two runs never get mixed; delete the folders you no longer need yo
 
 ## Requirements
 
-- NVIDIA GPU with **16 GB VRAM**, or an Apple Silicon Mac with **16 GB unified memory or more**
+- NVIDIA GPU with **16 GB VRAM** (AMD Radeon on Windows: see [AMD Radeon](#amd-radeon-windows)), or an Apple Silicon Mac with **16 GB unified memory or more**
   running macOS 14 or newer (tested on M1 Pro; more memory is recommended for larger local models)
 - [ffmpeg](https://ffmpeg.org/) in your PATH
 - [Ollama](https://ollama.com/)
@@ -195,7 +195,7 @@ with `--config config/local.yaml`. The most important settings:
 - `audio`: mic, game and voice chat tracks (default: found automatically, see "Recording setup")
 - `editor.target_minutes`: length of the final video
 - `vision.model`, `editor.model`: which Ollama models to use
-- `render.codec`: `auto` selects VideoToolbox on macOS, NVENC on NVIDIA systems, otherwise libx264
+- `render.codec`: `auto` selects VideoToolbox on macOS, NVENC on NVIDIA systems, AMF on AMD systems (Windows), otherwise libx264
 
 ## Game profiles
 
@@ -273,6 +273,34 @@ so you can pull any removed part back in the editor. Recordings with a stacked l
 left out of the motion check (so a moving cam does not hide a frozen game picture) and the single
 track is used as a full mix. With several recordings the layout is checked on the first one, so record
 a series with the same OBS scene.
+
+## AMD Radeon (Windows)
+
+Tested on a Radeon RX 9070 GRE (12 GB, RDNA4) with Windows 11. Ollama uses the Radeon by
+itself. With `render.codec: auto`, nightcut renders with AMD AMF (`h264_amf`) as soon as the
+Radeon driver is installed (quality via constant QP, `render.cq` applies). The installer warns
+that no NVIDIA GPU was found; confirm and it continues.
+
+Whisper (transcript, Shorts subtitles) runs on the CPU by default, because the Python
+environment installs PyTorch for CUDA. To run it on the Radeon, install AMD's PyTorch for Windows
+(ROCm, currently preview, Python 3.12 only) into the environment after `uv sync`:
+
+```powershell
+uv python pin 3.12
+uv sync
+$base = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1"
+uv pip install --python .venv\Scripts\python.exe "$base/rocm_sdk_core-7.2.1-py3-none-win_amd64.whl" `
+  "$base/rocm_sdk_devel-7.2.1-py3-none-win_amd64.whl" "$base/rocm_sdk_libraries_custom-7.2.1-py3-none-win_amd64.whl" `
+  "$base/rocm-7.2.1.tar.gz"
+uv pip install --python .venv\Scripts\python.exe --reinstall-package torch `
+  "$base/torch-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl"
+uv run --no-sync python -c "import torch; print(torch.cuda.get_device_name(0))"
+```
+
+Then start nightcut with `uv run --no-sync nightcut ...` (a plain `uv run` or `update.bat`
+puts CUDA PyTorch back; repeat the step after updating). On an RX 9070 GRE a 1.2 h recording
+took 2.7 min for the transcript. VRAM and energy in
+`report.md` stay at 0, they are read from `nvidia-smi`.
 
 ## Two NVIDIA GPUs
 

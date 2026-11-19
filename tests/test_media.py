@@ -55,3 +55,33 @@ def test_auto_encoder_uses_nvenc_with_nvidia_runtime(monkeypatch):
     monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_nvenc", "libx264"})
     monkeypatch.setattr(media, "nvidia_runtime_available", lambda: True)
     assert resolve_encoder("auto") == "h264_nvenc"
+
+
+def test_amf_options_use_constant_qp():
+    assert encoder_options("h264_amf", 18, 1) == [
+        "-c:v", "h264_amf", "-usage", "transcoding", "-quality", "quality", "-rc", "cqp",
+        "-qp_i", "18", "-qp_p", "18", "-qp_b", "18"]
+
+
+def test_auto_encoder_uses_amf_on_amd(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "win32")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_nvenc", "h264_amf", "libx264"})
+    monkeypatch.setattr(media, "nvidia_runtime_available", lambda: False)
+    monkeypatch.setattr(media, "amd_runtime_available", lambda: True)
+    assert resolve_encoder("auto") == "h264_amf"
+
+
+def test_auto_encoder_prefers_nvenc_over_amf(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "win32")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_nvenc", "h264_amf", "libx264"})
+    monkeypatch.setattr(media, "nvidia_runtime_available", lambda: True)
+    monkeypatch.setattr(media, "amd_runtime_available", lambda: True)
+    assert resolve_encoder("auto") == "h264_nvenc"
+
+
+def test_auto_encoder_skips_amf_without_driver(monkeypatch):
+    monkeypatch.setattr(media.sys, "platform", "win32")
+    monkeypatch.setattr(media, "ffmpeg_encoders", lambda: {"h264_amf", "libx264"})
+    monkeypatch.setattr(media, "nvidia_runtime_available", lambda: False)
+    monkeypatch.setattr(media, "amd_runtime_available", lambda: False)
+    assert resolve_encoder("auto") == "libx264"

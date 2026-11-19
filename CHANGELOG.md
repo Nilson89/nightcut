@@ -4,6 +4,11 @@ All notable changes to nightcut. Versions follow [semantic versioning](https://s
 
 ## [Unreleased]
 
+### Added
+- **AMD Radeon on Windows.** `render.codec: auto` now picks AMD AMF (`h264_amf`) when the Radeon
+  driver is installed (NVIDIA and macOS stay as before), with constant QP so `render.cq` applies.
+  The README describes how to run Whisper on the Radeon with AMD's PyTorch for Windows (ROCm).
+
 ## [0.3.2] - 2026-11-18
 
 ### Added

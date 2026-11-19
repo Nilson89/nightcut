@@ -9,7 +9,7 @@ Alles läuft auf deiner eigenen Grafikkarte, nichts wird hochgeladen.
 
 ## Was du brauchst
 
-- NVIDIA-Grafikkarte mit **16 GB VRAM** oder Apple-Silicon-Mac mit mindestens
+- NVIDIA-Grafikkarte mit **16 GB VRAM** (AMD-Radeon unter Windows: siehe [AMD-Radeon](#amd-radeon-windows)) oder Apple-Silicon-Mac mit mindestens
   **16 GB gemeinsamem Speicher** und macOS 14 oder neuer (getestet auf einem M1 Pro)
 - [ffmpeg](https://ffmpeg.org/) (muss im PATH liegen)
 - [Ollama](https://ollama.com/)
@@ -214,7 +214,7 @@ Die wichtigsten Punkte:
 - `killfeed.player_names` – dein Name im Spiel. Dann liest nightcut alle paar Sekunden
   den Killfeed mit und findet auch Kills, bei denen du nicht laut geworden bist
   (das Spielprofil braucht dafür eine `killfeed_region`, bei `bf2042` ist sie drin).
-- `render.codec` – `auto` nutzt auf macOS VideoToolbox, auf NVIDIA-Systemen NVENC, sonst libx264
+- `render.codec` – `auto` nutzt auf macOS VideoToolbox, auf NVIDIA-Systemen NVENC, auf AMD-Systemen (Windows) AMF, sonst libx264
 
 ## Was am Morgen im Ausgabeordner liegt
 
@@ -321,6 +321,20 @@ Du hast nur etwas an den Einstellungen geändert und willst nicht alles neu rech
 `--force <schritt>`, ab wo neu gerechnet wird. Mit `--force` bleibt nightcut im Ordner des
 bisherigen Laufs dieser Aufnahme. Fehlen dort Dateien eines fertigen Schritts (zum Beispiel
 gelöschte Clips in `media/`), rechnet nightcut diesen Schritt und alles danach von selbst neu.
+
+## AMD-Radeon (Windows)
+
+Getestet mit einer Radeon RX 9070 GRE (12 GB, RDNA4) unter Windows 11. Ollama nutzt die Radeon
+von selbst. Mit `render.codec: auto` rendert nightcut über AMD AMF (`h264_amf`), sobald der
+Radeon-Treiber installiert ist (Qualität über konstantes QP, `render.cq` gilt). Die Warnung
+„keine NVIDIA-Grafikkarte“ im Installer einfach bestätigen.
+
+Whisper (Transkript, Shorts-Untertitel) läuft erst mal auf der CPU, weil die Python-Umgebung
+PyTorch für CUDA installiert. Für die Radeon AMDs PyTorch für Windows (ROCm, derzeit Preview, nur
+Python 3.12) nach `uv sync` in die Umgebung installieren, die Befehle stehen im
+[englischen README](README.md#amd-radeon-windows). Danach nightcut mit `uv run --no-sync nightcut ...`
+starten; `update.bat` oder ein normales `uv run` holen wieder CUDA-PyTorch, dann den Schritt
+wiederholen.
 
 ## Zwei NVIDIA-Grafikkarten
 

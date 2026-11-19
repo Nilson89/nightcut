@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -168,25 +169,42 @@ def nvidia_runtime_available() -> bool:
     return "GPU " in out
 
 
+@cache
+def amd_runtime_available() -> bool:
+    """True when the AMD AMF runtime is installed (comes with the Radeon driver on Windows)."""
+    if sys.platform != "win32":
+        return False
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    return os.path.isfile(os.path.join(system_root, "System32", "amfrt64.dll"))
+
+
 def resolve_encoder(codec: str) -> str:
-    """Resolve `auto` to VideoToolbox on macOS, NVENC elsewhere, then software x264."""
+    """Resolve `auto` to VideoToolbox on macOS, NVENC on NVIDIA, AMF on AMD, then software x264."""
     if codec != "auto":
         return codec
     available = ffmpeg_encoders()
-    preferred = "h264_videotoolbox" if sys.platform == "darwin" else "h264_nvenc"
-    if preferred in available and (preferred != "h264_nvenc" or nvidia_runtime_available()):
-        return preferred
+    if sys.platform == "darwin":
+        if "h264_videotoolbox" in available:
+            return "h264_videotoolbox"
+    elif "h264_nvenc" in available and nvidia_runtime_available():
+        return "h264_nvenc"
+    elif "h264_amf" in available and amd_runtime_available():
+        return "h264_amf"
     if "libx264" in available:
         return "libx264"
-    raise RuntimeError("No supported H.264 encoder found in FFmpeg (tried VideoToolbox, NVENC and libx264)")
+    raise RuntimeError("No supported H.264 encoder found in FFmpeg (tried VideoToolbox, NVENC, AMF and libx264)")
 
 
 def encoder_options(codec: str, quality: int, gpu: int | None = None, bitrate: str | None = None) -> list[str]:
-    """Portable ffmpeg encoder options for NVIDIA, macOS VideoToolbox, or software x264."""
+    """Portable ffmpeg encoder options for NVIDIA, AMD AMF, macOS VideoToolbox, or software x264."""
     codec = resolve_encoder(codec)
     common = ["-c:v", codec, *encoder_gpu(codec, gpu)]
     if "nvenc" in codec:
         return common + ["-preset", "p5", "-rc", "vbr", "-cq", str(quality), "-b:v", "0"]
+    if "_amf" in codec:  # constant QP: closest match to NVENC's -cq / x264's -crf
+        q = str(quality)
+        return common + ["-usage", "transcoding", "-quality", "quality", "-rc", "cqp",
+                         "-qp_i", q, "-qp_p", q, "-qp_b", q]
     if codec == "libx264":
         return common + ["-preset", "medium", "-crf", str(quality)]
     if "videotoolbox" in codec:
